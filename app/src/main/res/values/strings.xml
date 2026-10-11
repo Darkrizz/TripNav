@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">TripNav</string>
+    <string name="mirror_service_label">TripNav – Google Maps mirroring</string>
+    <string name="channel_ride">Ride</string>
+    <string name="notif_ride_title">TripNav is running</string>
+</resources>

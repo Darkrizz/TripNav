@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.TripNav" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/bg</item>
+    </style>
+    <color name="bg">#FF0E1116</color>
+    <color name="brand">#FFFF7A1A</color>
+</resources>
