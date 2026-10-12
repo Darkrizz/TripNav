@@ -1,0 +1,11 @@
+[
+  {
+    "id": "in-western",
+    "name": "India · Western",
+    "description": "Maharashtra, Gujarat, Goa, Dadra & Nagar Haveli and Daman & Diu",
+    "country": "IN",
+    "rightHandTraffic": false,
+    "pbf": "https://download.geofabrik.de/asia/india/western-zone-latest.osm.pbf",
+    "poly": "https://download.geofabrik.de/asia/india/western-zone.poly"
+  }
+]

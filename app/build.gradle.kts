@@ -18,6 +18,8 @@ android {
         versionName = "1.0.0"
         // Public FOSSGIS instance for development; self-host for production (docs/backend.md).
         buildConfigField("String", "DEFAULT_VALHALLA_URL", "\"https://valhalla1.openstreetmap.de\"")
+        // Zone list published by .github/workflows/offline-packs.yml (set tripnav.packsUrl in gradle.properties).
+        buildConfigField("String", "DEFAULT_PACKS_URL", "\"${project.findProperty("tripnav.packsUrl") ?: ""}\"")
     }
 
     buildTypes {
@@ -86,6 +88,10 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.1")
 
     implementation("org.maplibre.gl:android-sdk:11.13.5")
+    // On-device Valhalla (offline routing); tiles must be built with the same Valhalla core (3.9).
+    implementation("io.github.rallista:valhalla-mobile:0.6.4")
+    implementation("io.github.rallista:valhalla-models-config:0.6.0")
+    implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
     testImplementation("junit:junit:4.13.2")

@@ -27,8 +27,32 @@ import java.util.Locale
 
 class RoutingException(message: String) : IOException(message)
 
-/** Thin client for the Valhalla `/route` and `/trace_attributes` endpoints using motorcycle costing. */
-class ValhallaClient(private val http: OkHttpClient) {
+/** Where Valhalla requests go: a routing server, or the on-device engine with an offline zone. */
+fun interface ValhallaTransport {
+    /** @param endpoint "route" or "trace_attributes"; returns Valhalla's JSON response. */
+    fun post(endpoint: String, body: String): String
+}
+
+class HttpValhalla(private val http: OkHttpClient, private val baseUrl: String) : ValhallaTransport {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    override fun post(endpoint: String, body: String): String {
+        val req = Request.Builder().url("${baseUrl.trimEnd('/')}/$endpoint")
+            .post(body.toRequestBody("application/json".toMediaType()))
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                val msg = runCatching { json.decodeFromString<JsonObject>(text)["error"]?.jsonPrimitive?.content }.getOrNull()
+                throw RoutingException(msg ?: "Routing server error ${resp.code}")
+            }
+            return text
+        }
+    }
+}
+
+/** Builds Valhalla requests (motorcycle costing) and turns responses into [Route]s, whatever the transport. */
+class ValhallaClient {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
     @Serializable private data class RouteResponse(val trip: Trip? = null, val error: String? = null)
@@ -50,7 +74,7 @@ class ValhallaClient(private val http: OkHttpClient) {
     )
 
     suspend fun route(
-        baseUrl: String,
+        transport: ValhallaTransport,
         origin: LatLon,
         headingDeg: Float?,
         destinations: List<Destination>,
@@ -89,7 +113,7 @@ class ValhallaClient(private val http: OkHttpClient) {
                 put("language", Locale.getDefault().toLanguageTag())
             }
         }
-        val res: RouteResponse = post("$baseUrl/route", body)
+        val res: RouteResponse = json.decodeFromString(transport.post("route", body.toString()))
         val trip = res.trip ?: throw RoutingException(res.error ?: "No route found")
         var offset = 0
         val points = ArrayList<LatLon>()
@@ -117,7 +141,7 @@ class ValhallaClient(private val http: OkHttpClient) {
     }
 
     /** Fetches per-edge speed limits along [route]; failures are non-fatal and return an empty list. */
-    suspend fun speedLimits(baseUrl: String, route: Route): List<SpeedLimitSpan> = withContext(Dispatchers.IO) {
+    suspend fun speedLimits(transport: ValhallaTransport, route: Route): List<SpeedLimitSpan> = withContext(Dispatchers.IO) {
         if (route.points.size < 2 || route.points.size > 12_000) return@withContext emptyList()
         runCatching {
             val body = buildJsonObject {
@@ -133,7 +157,7 @@ class ValhallaClient(private val http: OkHttpClient) {
                     })
                 }
             }
-            val obj: JsonObject = post("$baseUrl/trace_attributes", body)
+            val obj: JsonObject = json.decodeFromString(transport.post("trace_attributes", body.toString()))
             val edges = obj["edges"] as? kotlinx.serialization.json.JsonArray ?: return@runCatching emptyList()
             edges.mapNotNull { e ->
                 val o = e as? JsonObject ?: return@mapNotNull null
@@ -144,19 +168,5 @@ class ValhallaClient(private val http: OkHttpClient) {
                 SpeedLimitSpan(route.distanceAt(b), route.distanceAt(en), limit)
             }
         }.getOrDefault(emptyList())
-    }
-
-    private inline fun <reified T> post(url: String, body: JsonObject): T {
-        val req = Request.Builder().url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-        http.newCall(req).execute().use { resp ->
-            val text = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
-                val msg = runCatching { json.decodeFromString<JsonObject>(text)["error"]?.jsonPrimitive?.content }.getOrNull()
-                throw RoutingException(msg ?: "Routing server error ${resp.code}")
-            }
-            return json.decodeFromString(text)
-        }
     }
 }

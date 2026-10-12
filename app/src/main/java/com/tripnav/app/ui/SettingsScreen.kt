@@ -31,17 +31,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tripnav.app.BuildConfig
+import com.tripnav.app.settings.DataMode
 import com.tripnav.app.settings.NightMode
 import com.tripnav.app.settings.PodIdle
 import com.tripnav.app.settings.PodSecondary
 import com.tripnav.app.settings.RoutePreference
 
 @Composable
-fun SettingsScreen(vm: RideViewModel) {
+fun SettingsScreen(vm: RideViewModel, onOpenOfflineMaps: () -> Unit) {
     val repo = vm.c.settings
     val s by repo.settings.collectAsState()
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+
+        Section("Offline")
+        Row(Modifier.fillMaxWidth().clickable(onClick = onOpenOfflineMaps).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Offline maps & internet use")
+                Text(when (s.dataMode) { DataMode.AUTO -> "Automatic"; DataMode.OFFLINE -> "Offline only"; DataMode.ONLINE -> "Online only" },
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text("›", style = MaterialTheme.typography.titleLarge)
+        }
 
         Section("Routing")
         Choice("Route style", s.routePreference, RoutePreference.entries, {

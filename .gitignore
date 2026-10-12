@@ -9,3 +9,4 @@ local.properties
 !/app/release/*.apk
 captures/
 .claude/
+/packs-build/

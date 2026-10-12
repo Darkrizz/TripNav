@@ -29,6 +29,9 @@ enum class PodIdle { COMPASS, CLOCK }
 
 enum class RoutePreference { FASTEST, AVOID_HIGHWAYS, CURVY }
 
+/** AUTO = offline zones when they cover the job, online otherwise. OFFLINE never uses the network. */
+enum class DataMode { AUTO, ONLINE, OFFLINE }
+
 data class AppSettings(
     val imperial: Boolean = false,
     val clock24h: Boolean = true,
@@ -45,6 +48,8 @@ data class AppSettings(
     val mirrorGoogleMaps: Boolean = true,
     val keepScreenOn: Boolean = true,
     val valhallaUrl: String = BuildConfig.DEFAULT_VALHALLA_URL,
+    val dataMode: DataMode = DataMode.AUTO,
+    val packsUrl: String = BuildConfig.DEFAULT_PACKS_URL,
     val knownPods: Set<String> = emptySet(),
     val lastPod: String? = null,
     val autoConnect: Boolean = true,
@@ -67,6 +72,8 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
         val mirror = booleanPreferencesKey("mirror_gmaps")
         val keepScreenOn = booleanPreferencesKey("keep_screen_on")
         val valhallaUrl = stringPreferencesKey("valhalla_url")
+        val dataMode = stringPreferencesKey("data_mode")
+        val packsUrl = stringPreferencesKey("packs_url")
         val knownPods = stringSetPreferencesKey("known_pods")
         val lastPod = stringPreferencesKey("last_pod")
         val autoConnect = booleanPreferencesKey("auto_connect")
@@ -93,6 +100,8 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
             mirrorGoogleMaps = p[K.mirror] ?: d.mirrorGoogleMaps,
             keepScreenOn = p[K.keepScreenOn] ?: d.keepScreenOn,
             valhallaUrl = p[K.valhallaUrl]?.takeIf { it.isNotBlank() } ?: d.valhallaUrl,
+            dataMode = p.enum(K.dataMode, d.dataMode),
+            packsUrl = p[K.packsUrl]?.takeIf { it.isNotBlank() } ?: d.packsUrl,
             knownPods = p[K.knownPods] ?: emptySet(),
             lastPod = p[K.lastPod],
             autoConnect = p[K.autoConnect] ?: d.autoConnect,
@@ -126,6 +135,8 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
     fun setKeepScreenOn(v: Boolean) = edit { it[K.keepScreenOn] = v }
     fun setValhallaUrl(v: String) = edit { it[K.valhallaUrl] = v.trim().trimEnd('/') }
     fun setAutoConnect(v: Boolean) = edit { it[K.autoConnect] = v }
+    fun setDataMode(v: DataMode) = edit { it[K.dataMode] = v.name }
+    fun setPacksUrl(v: String) = edit { it[K.packsUrl] = v.trim() }
     fun setLastPod(mac: String) = edit { it[K.lastPod] = mac }
     fun addKnownPod(mac: String) = edit { it[K.knownPods] = (it[K.knownPods] ?: emptySet()) + mac; it[K.lastPod] = mac }
     fun forgetPod(mac: String) = edit {

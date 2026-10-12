@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Navigation
@@ -107,6 +108,12 @@ fun RideScreen(vm: RideViewModel, onOpenPod: () -> Unit) {
     val active = nav as? NavState.Active
     val progress = active?.progress
     val night = loc?.let { Sun.isNight(it.latitude, it.longitude) } ?: false
+    val installed by c.packs.installed.collectAsState()
+    val here = loc?.let { LatLon(it.latitude, it.longitude) }
+    val inZone = here?.let { p -> installed.any { it.zone.contains(p) } }
+    val mapStyle = remember(night, inZone, settings.dataMode, installed) {
+        c.data.mapStyle(night, here, STYLE_DAY, STYLE_NIGHT)
+    }
     LaunchedEffect(active != null) { if (active != null) follow = true }
 
     val routePts = active?.route?.points ?: preview.route?.points
@@ -115,7 +122,7 @@ fun RideScreen(vm: RideViewModel, onOpenPod: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         RideMap(
             modifier = Modifier.fillMaxSize(),
-            night = night,
+            style = mapStyle,
             location = loc,
             route = routePts,
             traveledToIndex = if (active != null && progress != null) active.route.cumDist.indexOfFirst { it > progress.alongM }.coerceAtLeast(0) else 0,
@@ -151,7 +158,10 @@ fun RideScreen(vm: RideViewModel, onOpenPod: () -> Unit) {
             message?.let { Spacer(Modifier.height(8.dp)); InfoCard(it); LaunchedEffect(it) { kotlinx.coroutines.delay(3_000); vm.consumeMessage() } }
             if (active == null) {
                 Spacer(Modifier.height(8.dp))
-                PodChip(pod.state, c.presenter.source, mirror != null && c.mirror.isFresh(), onOpenPod)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PodChip(pod.state, c.presenter.source, mirror != null && c.mirror.isFresh(), onOpenPod)
+                    if (mapStyle.json != null) OfflineChip(settings.dataMode == com.tripnav.app.settings.DataMode.OFFLINE)
+                }
             }
         }
 
@@ -389,6 +399,17 @@ private fun PodChip(state: PodLinkState, source: PodSource, mirroring: Boolean, 
             Icon(if (state == PodLinkState.READY) Icons.Filled.BluetoothConnected else Icons.Filled.Bluetooth, null, tint = color, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text(label, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+@Composable
+private fun OfflineChip(strict: Boolean) {
+    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.CloudOff, null, tint = Ok, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (strict) "Offline only" else "Offline map", style = MaterialTheme.typography.labelLarge)
         }
     }
 }

@@ -14,6 +14,10 @@ import com.tripnav.app.nav.NavEngine
 import com.tripnav.app.nav.TrafficSide
 import com.tripnav.app.nav.ValhallaClient
 import com.tripnav.app.nav.VoiceGuide
+import com.tripnav.app.offline.DataPolicy
+import com.tripnav.app.offline.OfflineRouter
+import com.tripnav.app.offline.OfflineSearch
+import com.tripnav.app.offline.PackStore
 import com.tripnav.app.pod.PodPresenter
 import com.tripnav.app.search.Geocoder
 import com.tripnav.app.settings.SettingsRepository
@@ -67,27 +71,50 @@ class AppContainer(private val context: Context) {
     val scanner = PodScanner(context)
     val pod = PodConnection(context, settings)
     val geocoder = Geocoder(http)
-    val valhalla = ValhallaClient(http)
+    val valhalla = ValhallaClient()
+    val packs = PackStore(context, http, ioScope)
+    val offlineRouter = OfflineRouter(context)
+    val offlineSearch = OfflineSearch()
+    val data = DataPolicy(context, http, settings, packs, offlineRouter, offlineSearch, geocoder)
     val mirror = MirrorHub(ioScope, db.learnedIcons())
     val recorder = TripRecorder(ioScope, db.trips())
 
     @Volatile private var countryIso: String? = initialCountry()
     private var countryCheckedAt: LatLon? = null
-    fun rightHandTraffic(): Boolean = TrafficSide.isRightHand(countryIso)
+    fun rightHandTraffic(): Boolean {
+        val here = location.location.value?.let { LatLon(it.latitude, it.longitude) }
+        return here?.let { data.rightHandTrafficAt(it) } ?: TrafficSide.isRightHand(countryIso)
+    }
 
-    val nav = NavEngine(mainScope, valhalla, settings, location, ::rightHandTraffic)
+    val nav = NavEngine(mainScope, valhalla, settings, location, data::routing, ::rightHandTraffic)
+
+    /** Deletes a zone after releasing the routing engine and search database that may hold it open. */
+    fun deleteZone(id: String) {
+        offlineRouter.close()
+        offlineSearch.close(id)
+        packs.delete(id)
+    }
     val voice by lazy { VoiceGuide(context, settings) }
     val presenter = PodPresenter(mainScope, pod, nav, mirror, location, settings)
 
     fun start() {
         nav.announcer = com.tripnav.app.nav.Announcer { text, urgent -> voice.announce(text, urgent) }
         presenter.start()
+        // A zone was installed, updated or deleted: drop cached search handles so the new files are used.
+        mainScope.launch { packs.installed.collect { offlineSearch.close() } }
+        // Offline-only mode: tell MapLibre not to attempt any network requests.
+        mainScope.launch {
+            settings.settings.collect { s ->
+                org.maplibre.android.MapLibre.getInstance(context)
+                org.maplibre.android.MapLibre.setConnected(if (s.dataMode == com.tripnav.app.settings.DataMode.OFFLINE) false else null)
+            }
+        }
         // Keep the traffic side right when riding across borders (only re-checked every 50 km).
         mainScope.launch {
             location.location.filterNotNull().collect { loc ->
                 val here = LatLon(loc.latitude, loc.longitude)
                 val last = countryCheckedAt
-                if (last == null || Geo.distance(last, here) > 50_000) {
+                if ((last == null || Geo.distance(last, here) > 50_000) && data.rightHandTrafficAt(here) == null && data.countryLookupAllowed()) {
                     countryCheckedAt = here
                     ioScope.launch { geocoder.countryCode(here)?.let { countryIso = it } }
                 }

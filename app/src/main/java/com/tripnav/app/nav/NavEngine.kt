@@ -49,6 +49,7 @@ class NavEngine(
     private val valhalla: ValhallaClient,
     private val settings: SettingsRepository,
     private val location: LocationSource,
+    private val transportFor: (List<LatLon>) -> ValhallaTransport,
     private val rightHandTraffic: () -> Boolean,
 ) {
     private val _state = MutableStateFlow<NavState>(NavState.Idle)
@@ -74,8 +75,10 @@ class NavEngine(
         val here = location.location.value ?: throw RoutingException("Waiting for GPS fix…")
         val s = settings.settings.value
         val heading = here.takeIf { it.hasBearing() && it.speed > 2f }?.bearing
-        val route = valhalla.route(s.valhallaUrl, LatLon(here.latitude, here.longitude), heading, destinations, s)
-        route.withSpeedLimits(valhalla.speedLimits(s.valhallaUrl, route))
+        val origin = LatLon(here.latitude, here.longitude)
+        val transport = transportFor(listOf(origin) + destinations.map { it.point })
+        val route = valhalla.route(transport, origin, heading, destinations, s)
+        route.withSpeedLimits(valhalla.speedLimits(transport, route))
     }
 
     fun start(route: Route) {

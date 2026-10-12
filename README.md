@@ -13,6 +13,25 @@ TripNav is a motorcycle navigation app for Android that drives the **TripperPod*
 - **Trips.** Automatic ride recording (distance, moving time, average and max speed), GPX export, and riding a GPX file as a route.
 - **Developer tools.** Raw frame console with live TX/RX log, pod icon tester, route simulator.
 
+## Offline (hybrid) mode
+**Settings → Offline maps** lets you pick the internet mode:
+- **Automatic:** uses downloaded zones when they cover the trip, and goes online elsewhere.
+- **Offline only:** never touches the network.
+- **Online only.**
+
+Zones are downloaded per region. Each zone has three files: on-device Valhalla routing (`valhalla-mobile`), a PMTiles vector map and a SQLite search index.
+
+| Zone | Covers | Map | Search | Routing |
+|---|---|---|---|---|
+| `in-western` | Maharashtra, Gujarat, Goa, DNH & DD | 265 MB | 21 MB | built in CI (est. 300–450 MB) |
+
+### Building and publishing packs (free)
+- **Building:** `.github/workflows/offline-packs.yml` builds every zone in `tools/zones.json` on GitHub Actions: Valhalla 3.9.0 Docker for routing, Planetiler for the map, `tools/packbuilder` for search.
+- **Publishing:** the workflow uploads the packs to the release tagged `packs`. It runs monthly and on demand (Actions → Offline packs → Run workflow).
+- **App setup:** point the app at your release by setting `tripnav.packsUrl` in `gradle.properties`.
+- **Building locally:** run `tools/build-zone.sh in-western` (needs Docker, Java 21, jq).
+- **Without hosting:** copy `packs.json` plus the zone files to the phone and use **Install from folder**.
+
 ## Improvements over Super TripperPod
 | Area | Super TripperPod | TripNav |
 |---|---|---|
@@ -48,5 +67,7 @@ app/            Android app
   pod/          PodPresenter: decides what the pod shows (nav > Maps mirror > compass/clock)
   mirror/       Google Maps notification listener, text parser, icon hashing/learning
   search/ trips/ data/ settings/ location/ service/ ui/
+  offline/      PackStore (download/verify/install), OfflineRouter, OfflineSearch, OfflineStyle, DataPolicy
+tools/          zones.json, build-zone.sh, packbuilder (search index + manifest), make_offline_style.py
 docs/           Protocol spec, backend notes
 ```

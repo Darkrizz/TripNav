@@ -57,7 +57,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         searchJob = viewModelScope.launch {
             delay(350)
             _searching.value = true
-            _results.value = runCatching { c.geocoder.search(q, here()) }.getOrDefault(emptyList())
+            _results.value = runCatching { c.data.search(q, here()) }.getOrDefault(emptyList())
             _searching.value = false
         }
     }
@@ -77,7 +77,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dropPin(p: LatLon) {
         viewModelScope.launch {
-            val place = runCatching { c.geocoder.reverse(p) }.getOrElse { Place("Dropped pin", "", p) }
+            val place = runCatching { c.data.reverse(p) }.getOrElse { Place("Dropped pin", "", p) }
             choose(place, asStop = _preview.value.stops.isNotEmpty())
         }
     }
@@ -139,7 +139,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     /** Text or a link shared from another app. */
     fun handleShared(text: String) = viewModelScope.launch {
         _message.value = "Finding shared place…"
-        val place = runCatching { c.geocoder.resolveShared(text, here()) }.getOrNull()
+        val place = runCatching { c.data.resolveShared(text, here()) }.getOrNull()
         _message.value = if (place == null) "Couldn't find that place" else null
         place?.let { choose(it) }
     }
@@ -147,7 +147,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     fun handleGeo(uri: String) {
         val q = Regex("[?&]q=([^&]+)").find(uri)?.groupValues?.get(1)?.let { java.net.URLDecoder.decode(it, "UTF-8") }
         if (q != null && com.tripnav.app.search.Geocoder.parseCoordinates(q) == null) {
-            viewModelScope.launch { c.geocoder.search(q, here()).firstOrNull()?.let { choose(it) } ?: run { _message.value = "No match for \"$q\"" } }
+            viewModelScope.launch { c.data.search(q, here()).firstOrNull()?.let { choose(it) } ?: run { _message.value = "No match for \"$q\"" } }
         } else handleShared(uri)
     }
 

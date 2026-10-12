@@ -39,6 +39,7 @@ import com.tripnav.app.ble.PodLinkState
 import com.tripnav.app.nav.NavState
 import com.tripnav.app.service.RideService
 import com.tripnav.app.ui.DebugScreen
+import com.tripnav.app.ui.OfflineMapsScreen
 import com.tripnav.app.ui.PodScreen
 import com.tripnav.app.ui.RideScreen
 import com.tripnav.app.ui.RideViewModel
@@ -72,6 +73,7 @@ class MainActivity : ComponentActivity() {
             TripNavTheme {
                 var tab by rememberSaveable { mutableStateOf(0) }
                 var debug by rememberSaveable { mutableStateOf(false) }
+                var offlineMaps by rememberSaveable { mutableStateOf(false) }
                 val settings by c.settings.settings.collectAsState()
                 val nav by c.nav.state.collectAsState()
                 LaunchedEffect(settings.keepScreenOn, nav) {
@@ -79,9 +81,15 @@ class MainActivity : ComponentActivity() {
                     if (keep) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
-                BackHandler(enabled = debug || tab != 0) { if (debug) debug = false else tab = 0 }
+                BackHandler(enabled = debug || offlineMaps || tab != 0) {
+                    when { debug -> debug = false; offlineMaps -> offlineMaps = false; else -> tab = 0 }
+                }
                 if (debug) {
                     DebugScreen(vm) { debug = false }
+                    return@TripNavTheme
+                }
+                if (offlineMaps) {
+                    OfflineMapsScreen(vm) { offlineMaps = false }
                     return@TripNavTheme
                 }
                 Scaffold(
@@ -101,7 +109,7 @@ class MainActivity : ComponentActivity() {
                             0 -> RideScreen(vm, onOpenPod = { tab = 1 })
                             1 -> PodScreen(vm, onOpenDebug = { debug = true })
                             2 -> TripsScreen(vm, onRouteImported = { tab = 0 })
-                            else -> SettingsScreen(vm)
+                            else -> SettingsScreen(vm, onOpenOfflineMaps = { offlineMaps = true })
                         }
                     }
                 }

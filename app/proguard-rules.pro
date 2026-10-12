@@ -13,3 +13,9 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+# valhalla-mobile: JNI + Moshi reflection over its config/request models
+-keep class com.valhalla.** { *; }
+-keep class com.stadiamaps.** { *; }
+-keep class kotlin.Metadata { *; }
+-keepclassmembers class * { @com.squareup.moshi.* <methods>; @com.squareup.moshi.* <fields>; }
+-dontwarn com.valhalla.**

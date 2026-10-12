@@ -1,0 +1,87 @@
+# Builds TripNav's per-zone offline packs (routing, map, search) and publishes them to the
+# GitHub release tagged "packs". The app downloads from:
+#   https://github.com/<owner>/<repo>/releases/download/packs/packs.json
+name: Offline packs
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 3 * *"   # monthly, picks up new roads from OpenStreetMap
+
+permissions:
+  contents: write
+
+jobs:
+  zones:
+    runs-on: ubuntu-latest
+    outputs:
+      ids: ${{ steps.read.outputs.ids }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: echo "ids=$(jq -c '[.[].id]' tools/zones.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: zones
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        zone: ${{ fromJSON(needs.zones.outputs.ids) }}
+    env:
+      TRIPNAV_TOOLS_ONLY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - name: Build pack builder
+        run: ./gradlew --no-daemon :tools:packbuilder:installDist
+      - name: Fetch Planetiler
+        run: mkdir -p packs-build && curl -sSfL -o packs-build/planetiler.jar https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar
+      - name: Build ${{ matrix.zone }}
+        run: bash tools/build-zone.sh "${{ matrix.zone }}" packs-build/out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pack-${{ matrix.zone }}
+          path: packs-build/out/
+          retention-days: 3
+          compression-level: 0
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TRIPNAV_TOOLS_ONLY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pack-*
+          path: out
+          merge-multiple: true
+      - name: Write manifest
+        run: |
+          ./gradlew --no-daemon -q :tools:packbuilder:installDist
+          tools/packbuilder/build/install/packbuilder/bin/packbuilder manifest out tools/zones.json out/packs.json
+          cat out/packs.json
+      - name: Publish release "packs"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: packs
+          name: Offline map packs
+          body: "Offline routing, map and search packs for TripNav. Updated ${{ github.run_id }}. Map data © OpenStreetMap contributors (ODbL)."
+          make_latest: false
+          files: |
+            out/packs.json
+            out/*.tar
+            out/*.pmtiles
+            out/*.sqlite

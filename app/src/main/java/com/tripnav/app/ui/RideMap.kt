@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.tripnav.app.offline.MapStyleSpec
 import com.tripnav.app.util.LatLon
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
@@ -52,7 +53,7 @@ const val STYLE_NIGHT = "https://tiles.openfreemap.org/styles/dark"
 @Composable
 fun RideMap(
     modifier: Modifier,
-    night: Boolean,
+    style: MapStyleSpec,
     location: Location?,
     route: List<LatLon>?,
     traveledToIndex: Int,
@@ -66,7 +67,7 @@ fun RideMap(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember { createMapView(context) }
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
-    var style by remember { mutableStateOf<Style?>(null) }
+    var loadedStyle by remember { mutableStateOf<Style?>(null) }
     val longPress by rememberUpdatedState(onLongPress)
     val pan by rememberUpdatedState(onUserPan)
 
@@ -99,10 +100,11 @@ fun RideMap(
         }
     }
 
-    LaunchedEffect(map, night) {
+    LaunchedEffect(map, style.key) {
         val m = map ?: return@LaunchedEffect
-        style = null
-        m.setStyle(Style.Builder().fromUri(if (night) STYLE_NIGHT else STYLE_DAY)) { s ->
+        loadedStyle = null
+        val builder = style.json?.let { Style.Builder().fromJson(it) } ?: Style.Builder().fromUri(style.uri ?: STYLE_DAY)
+        m.setStyle(builder) { s ->
             s.addSource(GeoJsonSource(SRC_ROUTE))
             s.addSource(GeoJsonSource(SRC_DONE))
             s.addSource(GeoJsonSource(SRC_PINS))
@@ -128,34 +130,34 @@ fun RideMap(
             )
             lc.isLocationComponentEnabled = true
             lc.renderMode = RenderMode.GPS
-            style = s
+            loadedStyle = s
         }
     }
 
-    LaunchedEffect(style, route, traveledToIndex) {
-        val s = style ?: return@LaunchedEffect
+    LaunchedEffect(loadedStyle, route, traveledToIndex) {
+        val s = loadedStyle ?: return@LaunchedEffect
         val pts = route.orEmpty()
         (s.getSource(SRC_ROUTE) as? GeoJsonSource)?.setGeoJson(line(pts))
         val done = if (pts.size >= 2 && traveledToIndex > 0) pts.subList(0, (traveledToIndex + 1).coerceAtMost(pts.size)) else emptyList()
         (s.getSource(SRC_DONE) as? GeoJsonSource)?.setGeoJson(line(done))
     }
 
-    LaunchedEffect(style, pins) {
-        val s = style ?: return@LaunchedEffect
+    LaunchedEffect(loadedStyle, pins) {
+        val s = loadedStyle ?: return@LaunchedEffect
         (s.getSource(SRC_PINS) as? GeoJsonSource)?.setGeoJson(
             FeatureCollection.fromFeatures(pins.map { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) }),
         )
     }
 
-    LaunchedEffect(style, location) {
+    LaunchedEffect(loadedStyle, location) {
         val m = map ?: return@LaunchedEffect
-        if (style == null || location == null) return@LaunchedEffect
+        if (loadedStyle == null || location == null) return@LaunchedEffect
         runCatching { m.locationComponent.forceLocationUpdate(location) }
     }
 
-    LaunchedEffect(style, follow) {
+    LaunchedEffect(loadedStyle, follow) {
         val m = map ?: return@LaunchedEffect
-        if (style == null) return@LaunchedEffect
+        if (loadedStyle == null) return@LaunchedEffect
         runCatching {
             if (follow) {
                 m.locationComponent.cameraMode = CameraMode.TRACKING_GPS
@@ -165,10 +167,10 @@ fun RideMap(
         }
     }
 
-    LaunchedEffect(style, fitRoute, route) {
+    LaunchedEffect(loadedStyle, fitRoute, route) {
         val m = map ?: return@LaunchedEffect
         val pts = route ?: return@LaunchedEffect
-        if (style == null || !fitRoute || pts.size < 2) return@LaunchedEffect
+        if (loadedStyle == null || !fitRoute || pts.size < 2) return@LaunchedEffect
         val b = LatLngBounds.Builder().apply { pts.forEach { include(LatLng(it.lat, it.lon)) } }.build()
         m.locationComponent.cameraMode = CameraMode.NONE
         m.animateCamera(CameraUpdateFactory.newLatLngBounds(b, 120, 220, 120, 520), 700)
