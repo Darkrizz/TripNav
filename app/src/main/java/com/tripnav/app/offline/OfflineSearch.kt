@@ -58,6 +58,21 @@ class OfflineSearch {
     }
 
     /** Nearest named place to [p] (within ~5 km), used for dropped pins. */
+    /** Speed cameras inside the box, or null when a pack predates camera data (built before cameras were added). */
+    fun cameras(zones: List<InstalledZone>, minLat: Double, minLon: Double, maxLat: Double, maxLon: Double): List<LatLon>? {
+        val out = ArrayList<LatLon>()
+        for (z in zones) {
+            val rows = runCatching {
+                db(z).rawQuery(
+                    "SELECT lat, lon FROM cameras WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
+                    arrayOf(minLat.toString(), maxLat.toString(), minLon.toString(), maxLon.toString()),
+                ).use { c -> buildList { while (c.moveToNext()) add(LatLon(c.getDouble(0), c.getDouble(1))) } }
+            }.getOrNull() ?: return null
+            out += rows
+        }
+        return out
+    }
+
     fun reverse(zones: List<InstalledZone>, p: LatLon): Place? {
         val zone = zones.firstOrNull { it.zone.contains(p) } ?: return null
         val d = 0.05

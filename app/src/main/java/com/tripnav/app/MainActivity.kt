@@ -1,5 +1,9 @@
 package com.tripnav.app
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.MaterialTheme
+import com.tripnav.app.ui.TN
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -93,13 +97,21 @@ class MainActivity : ComponentActivity() {
                     return@TripNavTheme
                 }
                 Scaffold(
+                    containerColor = TN.Bg, contentColor = TN.TextHi,
                     bottomBar = {
-                        if (nav !is NavState.Active) NavigationBar {
+                        if (nav !is NavState.Active) NavigationBar(containerColor = TN.Surface1, tonalElevation = 0.dp) {
                             listOf(
                                 Triple("Ride", Icons.Filled.Map, 0), Triple("Pod", Icons.Filled.Bluetooth, 1),
                                 Triple("Trips", Icons.Filled.Route, 2), Triple("Settings", Icons.Filled.Settings, 3),
                             ).forEach { (label, icon, idx) ->
-                                NavigationBarItem(selected = tab == idx, onClick = { tab = idx }, icon = { Icon(icon, null) }, label = { Text(label) })
+                                NavigationBarItem(
+                                    selected = tab == idx, onClick = { tab = idx }, icon = { Icon(icon, null) },
+                                    label = { Text(label.uppercase(), style = MaterialTheme.typography.labelSmall) },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = TN.Ember, selectedTextColor = TN.Ember, indicatorColor = TN.Ember.copy(alpha = 0.14f),
+                                        unselectedIconColor = TN.TextLo, unselectedTextColor = TN.TextLo,
+                                    ),
+                                )
                             }
                         }
                     },

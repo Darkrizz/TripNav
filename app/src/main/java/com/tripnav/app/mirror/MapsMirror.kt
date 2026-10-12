@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.service.notification.NotificationListenerService
+import android.util.Log
 import android.service.notification.StatusBarNotification
 import com.tripnav.app.TripNavApp
 import com.tripnav.app.data.LearnedIcon
@@ -34,6 +35,9 @@ class MirrorHub(private val scope: CoroutineScope, private val dao: LearnedIconD
     private val _lastBitmap = MutableStateFlow<Bitmap?>(null)
     /** Last maneuver bitmap Google Maps showed; used by the "teach icon" screen. */
     val lastBitmap: StateFlow<Bitmap?> = _lastBitmap.asStateFlow()
+    private val _lastRaw = MutableStateFlow<String?>(null)
+    /** Raw text of the last Maps notification seen, parsed or not; shown on the debug screen. */
+    val lastRaw: StateFlow<String?> = _lastRaw.asStateFlow()
     @Volatile private var learned: Map<Long, Int> = emptyMap()
 
     init { scope.launch { learned = dao.all().associate { it.hash to it.podIcon } } }
@@ -45,34 +49,53 @@ class MirrorHub(private val scope: CoroutineScope, private val dao: LearnedIconD
         if (bitmap != null) _lastBitmap.value = bitmap
     }
 
+    fun raw(text: String) { _lastRaw.value = text }
+
     fun teach(hash: Long, podIcon: Int) {
         learned = learned + (hash to podIcon)
         scope.launch { dao.put(LearnedIcon(hash, podIcon)) }
         _state.value = _state.value?.let { if (it.iconHash == hash) it.copy(icon = podIcon, iconKnown = true) else it }
     }
 
-    fun isFresh(now: Long = System.currentTimeMillis()) = _state.value?.let { now - it.updatedAt < 15_000 } == true
+    fun isFresh(now: Long = System.currentTimeMillis()) = _state.value?.let { now - it.updatedAt < 10 * 60_000 } == true
 }
 
 /** Reads Google Maps' turn-by-turn notification so a Maps-guided ride can be mirrored to the pod. */
 class MapsMirrorService : NotificationListenerService() {
     private val hub get() = (application as TripNavApp).container.mirror
 
+    override fun onListenerConnected() {
+        // Maps may already be navigating (app restarted, access just granted): pick its notification up now.
+        runCatching { activeNotifications?.forEach(::onNotificationPosted) }
+    }
+
+    override fun onListenerDisconnected() = hub.publish(null, null)
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName !in MAPS_PACKAGES) return
         val n = sbn.notification
-        if (n.flags and Notification.FLAG_ONGOING_EVENT == 0) return
+        if (!isNavigation(n)) return
         val ex = n.extras
-        val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
-        val sub = ex.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+        fun str(key: String) = ex.getCharSequence(key)?.toString()?.trim().orEmpty()
+        var title = str(Notification.EXTRA_TITLE)
+        var text = str(Notification.EXTRA_TEXT)
+        val big = str(Notification.EXTRA_BIG_TEXT)
+        if (text.isEmpty()) text = big
+        if (title.isEmpty() && text.isEmpty()) { title = n.tickerText?.toString().orEmpty() }
+        val sub = str(Notification.EXTRA_SUB_TEXT).ifEmpty { null }
+        val raw = "title=\"$title\" text=\"$text\" big=\"$big\" sub=\"${sub.orEmpty()}\" cat=${n.category}"
+        Log.d(TAG, raw)
+        hub.raw(raw)
         val parsed = MirrorParser.parse(title, text, (application as TripNavApp).container.rightHandTraffic()) ?: return
-        val bitmap = largeIconBitmap(n)
+        val prev = hub.state.value
+        // Close to a turn Maps sometimes drops the distance ("Turn left onto …"); keep counting from the last one.
+        val distance = parsed.distanceM ?: prev?.takeIf { it.instruction == parsed.instruction }?.distanceM ?: 0
+        val bitmap = maneuverBitmap(n)
         val hash = bitmap?.let { IconHash.dHash(it) }
         val learned = hash?.let { hub.lookup(it) }
         hub.publish(
             MirrorState(
-                icon = learned ?: parsed.icon, distanceM = parsed.distanceM, instruction = parsed.instruction,
+                icon = learned ?: parsed.icon, distanceM = distance, instruction = parsed.instruction,
                 eta = sub, iconHash = hash, iconKnown = learned != null, updatedAt = System.currentTimeMillis(),
             ),
             bitmap,
@@ -80,10 +103,13 @@ class MapsMirrorService : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        if (sbn.packageName in MAPS_PACKAGES && sbn.notification.flags and Notification.FLAG_ONGOING_EVENT != 0) hub.publish(null, null)
+        if (sbn.packageName in MAPS_PACKAGES && isNavigation(sbn.notification)) hub.publish(null, null)
     }
 
-    private fun largeIconBitmap(n: Notification): Bitmap? = runCatching {
+    private fun isNavigation(n: Notification) =
+        n.category == CATEGORY_NAVIGATION || n.flags and Notification.FLAG_ONGOING_EVENT != 0
+
+    private fun maneuverBitmap(n: Notification): Bitmap? = runCatching {
         val icon: Icon = n.getLargeIcon() ?: return null
         val d = icon.loadDrawable(this) ?: return null
         val bmp = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
@@ -94,6 +120,8 @@ class MapsMirrorService : NotificationListenerService() {
     }.getOrNull()
 
     companion object {
+        private const val TAG = "MapsMirror"
+        private const val CATEGORY_NAVIGATION = "navigation" // Notification.CATEGORY_NAVIGATION, API 31+
         val MAPS_PACKAGES = setOf("com.google.android.apps.maps", "com.google.android.apps.mapslite")
     }
 }
@@ -114,7 +142,8 @@ object IconHash {
     private fun luma(c: Int) = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000
 }
 
-data class ParsedTurn(val icon: Int, val distanceM: Int, val instruction: String)
+/** [distanceM] is null when the notification carries no distance. */
+data class ParsedTurn(val icon: Int, val distanceM: Int?, val instruction: String)
 
 /** Extracts distance and maneuver from Maps' notification text (English plus PT/ES/DE/FR basics). */
 object MirrorParser {
@@ -126,14 +155,17 @@ object MirrorParser {
     )
 
     fun parse(title: String, text: String, rightHand: Boolean = true): ParsedTurn? {
-        val all = "$title $text"
-        val dm = distance.find(all) ?: return null
-        val value = dm.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return null
-        val meters = when (dm.groupValues[2].lowercase()) {
-            "km" -> value * 1000; "mi" -> value * 1609.344; "ft" -> value / 3.281; "yd" -> value * 0.9144; else -> value
-        }.toInt()
-        val instruction = listOf(title, text).map { it.replace(dm.value, "").trim(' ', '·', '-', ',') }
-            .filter { it.isNotBlank() }.joinToString(" · ").ifBlank { all }
+        val all = "$title $text".trim()
+        if (all.isEmpty()) return null
+        val dm = distance.find(all)
+        val meters = dm?.let {
+            val value = it.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return@let null
+            when (it.groupValues[2].lowercase()) {
+                "km" -> value * 1000; "mi" -> value * 1609.344; "ft" -> value / 3.281; "yd" -> value * 0.9144; else -> value
+            }.toInt()
+        }
+        val instruction = listOf(title, text).map { if (dm != null) it.replace(dm.value, "") else it }
+            .map { it.trim(' ', '·', '-', ',') }.filter { it.isNotBlank() }.joinToString(" · ").ifBlank { all }
         return ParsedTurn(iconFor(instruction.lowercase(), rightHand), meters, instruction)
     }
 

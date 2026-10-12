@@ -130,10 +130,13 @@ class PackStore(
         val base = manifestUrl.substringBeforeLast('/') + "/"
         val staging = File(root, ".staging-${zone.id}").apply { mkdirs() }
         File(staging, "zone.json").writeText(json.encodeToString(Zone.serializer(), zone))
+        var enqueued = 0
         prefs.edit {
             zone.files.forEach { f ->
                 val target = File(staging, InstalledZone.localName(f.kind))
                 if (target.exists() && target.length() == f.size) return@forEach // already fetched earlier
+                if (reusable(zone, f) != null) return@forEach // unchanged since the installed version
+                enqueued++
                 target.delete()
                 val req = DownloadManager.Request(Uri.parse(base + f.name))
                     .setTitle("TripNav · ${zone.name}")
@@ -144,9 +147,27 @@ class PackStore(
                 putLong("dl:${zone.id}:${f.kind}", dm.enqueue(req))
             }
         }
-        _jobs.update { it + (zone.id to ZoneJob.Downloading(0, zone.totalBytes)) }
+        if (enqueued == 0) {
+            _jobs.update { it + (zone.id to ZoneJob.Verifying) }
+            scope.launch(Dispatchers.IO) {
+                finishInstall(zone, staging).onFailure { e -> _jobs.update { it + (zone.id to ZoneJob.Failed(e.message ?: "Install failed")) } }
+                    .onSuccess { _jobs.update { it - zone.id } }
+            }
+            return
+        }
+        _jobs.update { it + (zone.id to ZoneJob.Downloading(0, bytesToFetch(zone))) }
         watchDownloads()
     }
+
+    /** The installed copy of [f], if this zone is installed and that file has not changed. */
+    private fun reusable(zone: Zone, f: PackFile): File? {
+        val iz = _installed.value.firstOrNull { it.zone.id == zone.id } ?: return null
+        val old = iz.zone.files.firstOrNull { it.kind == f.kind } ?: return null
+        val file = File(iz.dir, InstalledZone.localName(f.kind))
+        return file.takeIf { old.sha256.equals(f.sha256, ignoreCase = true) && it.exists() && it.length() == f.size }
+    }
+
+    private fun bytesToFetch(zone: Zone) = zone.files.filter { reusable(zone, it) == null }.sumOf { it.size }
 
     fun cancel(zoneId: String) {
         val keys = prefs.all.keys.filter { it.startsWith("dl:$zoneId:") }
@@ -189,14 +210,14 @@ class PackStore(
             }
         }
         // Files fetched in an earlier attempt are not in the DownloadManager any more.
-        val already = zone.files.filter { f -> keys.none { it.endsWith(":${f.kind}") } }
+        val already = zone.files.filter { f -> keys.none { it.endsWith(":${f.kind}") } && reusable(zone, f) == null }
             .sumOf { File(staging, InstalledZone.localName(it.kind)).length() }
         failed?.let { msg ->
             prefs.edit { keys.forEach { remove(it) } }
             _jobs.update { it + (zoneId to ZoneJob.Failed(msg)) }
             return
         }
-        if (!allDone) { _jobs.update { it + (zoneId to ZoneJob.Downloading(done + already, zone.totalBytes)) }; return }
+        if (!allDone) { _jobs.update { it + (zoneId to ZoneJob.Downloading(done + already, bytesToFetch(zone))) }; return }
         prefs.edit { keys.forEach { remove(it) } }
         _jobs.update { it + (zoneId to ZoneJob.Verifying) }
         finishInstall(zone, staging).onFailure { e -> _jobs.update { it + (zoneId to ZoneJob.Failed(e.message ?: "Verification failed")) } }
@@ -205,12 +226,20 @@ class PackStore(
 
     /** Verifies every file against the manifest, then atomically swaps the zone into place. */
     private fun finishInstall(zone: Zone, staging: File): Result<Unit> = runCatching {
-        zone.files.forEach { f ->
+        val reused = zone.files.mapNotNull { f ->
+            val target = File(staging, InstalledZone.localName(f.kind))
+            if (target.exists()) null else reusable(zone, f)?.let { f to it }
+        }
+        zone.files.filter { f -> reused.none { it.first == f } }.forEach { f ->
             val file = File(staging, InstalledZone.localName(f.kind))
             if (!file.exists() || file.length() != f.size) throw IOException("${f.kind}: incomplete file")
             if (!sha256(file).equals(f.sha256, ignoreCase = true)) {
                 file.delete(); throw IOException("${f.kind}: checksum mismatch, please download again")
             }
+        }
+        // Unchanged files move over from the installed copy (verified when it was installed).
+        reused.forEach { (f, src) ->
+            if (!src.renameTo(File(staging, InstalledZone.localName(f.kind)))) throw IOException("${f.kind}: could not reuse installed file")
         }
         File(staging, "zone.json").writeText(json.encodeToString(Zone.serializer(), zone))
         val dest = File(root, zone.id)

@@ -36,6 +36,8 @@ data class AppSettings(
     val imperial: Boolean = false,
     val clock24h: Boolean = true,
     val nightMode: NightMode = NightMode.AUTO_SUN,
+    /** Map style on the phone; independent of the pod's night mode. */
+    val mapTheme: NightMode = NightMode.AUTO_SUN,
     val voiceEnabled: Boolean = true,
     val voiceStreetNames: Boolean = true,
     val podSecondary: PodSecondary = PodSecondary.ARRIVAL_TIME,
@@ -60,6 +62,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
         val imperial = booleanPreferencesKey("imperial")
         val clock24h = booleanPreferencesKey("clock24h")
         val nightMode = stringPreferencesKey("night_mode")
+        val mapTheme = stringPreferencesKey("map_theme")
         val voice = booleanPreferencesKey("voice")
         val voiceStreets = booleanPreferencesKey("voice_streets")
         val podSecondary = stringPreferencesKey("pod_secondary")
@@ -88,6 +91,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
             imperial = p[K.imperial] ?: d.imperial,
             clock24h = p[K.clock24h] ?: d.clock24h,
             nightMode = p.enum(K.nightMode, d.nightMode),
+            mapTheme = p.enum(K.mapTheme, d.mapTheme),
             voiceEnabled = p[K.voice] ?: d.voiceEnabled,
             voiceStreetNames = p[K.voiceStreets] ?: d.voiceStreetNames,
             podSecondary = p.enum(K.podSecondary, d.podSecondary),
@@ -122,6 +126,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
     fun setImperial(v: Boolean) = edit { it[K.imperial] = v }
     fun setClock24h(v: Boolean) = edit { it[K.clock24h] = v }
     fun setNightMode(v: NightMode) = edit { it[K.nightMode] = v.name }
+    fun setMapTheme(v: NightMode) = edit { it[K.mapTheme] = v.name }
     fun setVoice(v: Boolean) = edit { it[K.voice] = v }
     fun setVoiceStreets(v: Boolean) = edit { it[K.voiceStreets] = v }
     fun setPodSecondary(v: PodSecondary) = edit { it[K.podSecondary] = v.name }

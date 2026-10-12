@@ -1,5 +1,15 @@
 package com.tripnav.app.ui
 
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.BrightnessAuto
+import com.tripnav.app.settings.NightMode
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.AddLocationAlt
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -107,7 +117,11 @@ fun RideScreen(vm: RideViewModel, onOpenPod: () -> Unit) {
 
     val active = nav as? NavState.Active
     val progress = active?.progress
-    val night = loc?.let { Sun.isNight(it.latitude, it.longitude) } ?: false
+    val night = when (settings.mapTheme) {
+        NightMode.ALWAYS_DAY -> false
+        NightMode.ALWAYS_NIGHT -> true
+        NightMode.AUTO_SUN -> loc?.let { Sun.isNight(it.latitude, it.longitude) } ?: false
+    }
     val installed by c.packs.installed.collectAsState()
     val here = loc?.let { LatLon(it.latitude, it.longitude) }
     val inZone = here?.let { p -> installed.any { it.zone.contains(p) } }
@@ -158,7 +172,8 @@ fun RideScreen(vm: RideViewModel, onOpenPod: () -> Unit) {
             message?.let { Spacer(Modifier.height(8.dp)); InfoCard(it); LaunchedEffect(it) { kotlinx.coroutines.delay(3_000); vm.consumeMessage() } }
             if (active == null) {
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    MapThemeButton(settings.mapTheme) { c.settings.setMapTheme(it) }
                     PodChip(pod.state, c.presenter.source, mirror != null && c.mirror.isFresh(), onOpenPod)
                     if (mapStyle.json != null) OfflineChip(settings.dataMode == com.tripnav.app.settings.DataMode.OFFLINE)
                 }
@@ -170,7 +185,7 @@ fun RideScreen(vm: RideViewModel, onOpenPod: () -> Unit) {
             horizontalAlignment = Alignment.End,
         ) {
             if (!follow) {
-                FloatingActionButton(onClick = { follow = true }, containerColor = MaterialTheme.colorScheme.surface) {
+                FloatingActionButton(onClick = { follow = true }, containerColor = TN.Surface2, contentColor = TN.Ember, shape = CircleShape) {
                     Icon(Icons.Filled.MyLocation, "Recenter")
                 }
                 Spacer(Modifier.height(12.dp))
@@ -196,17 +211,22 @@ private fun SearchBox(
     query: String, searching: Boolean, focus: FocusRequester,
     onQuery: (String) -> Unit, onFocus: (Boolean) -> Unit, onClear: () -> Unit,
 ) {
-    Surface(shape = RoundedCornerShape(28.dp), shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface) {
+    Glass(shape = RoundedCornerShape(20.dp)) {
         TextField(
             value = query, onValueChange = onQuery,
             modifier = Modifier.fillMaxWidth().focusRequester(focus).onFocusChanged { onFocus(it.isFocused) },
-            placeholder = { Text("Where to? Search or long-press the map") },
-            leadingIcon = { if (searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Filled.Search, null) },
-            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = onClear) { Icon(Icons.Filled.Close, "Clear") } },
+            placeholder = { Text("Where to?", style = MaterialTheme.typography.titleMedium, color = TN.TextMid) },
+            leadingIcon = {
+                if (searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = TN.Ember)
+                else Icon(Icons.Filled.Search, null, tint = TN.Ember)
+            },
+            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = onClear) { Icon(Icons.Filled.Close, "Clear", tint = TN.TextMid) } },
             singleLine = true,
+            textStyle = MaterialTheme.typography.titleMedium,
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                focusedTextColor = TN.TextHi, unfocusedTextColor = TN.TextHi, cursorColor = TN.Ember,
             ),
         )
     }
@@ -219,64 +239,68 @@ private fun SearchResults(
     val rows = buildList {
         favorites.forEach { add(Triple(it, Icons.Filled.Star, true)) }
         recents.filter { r -> favorites.none { it.point == r.point } }.forEach { add(Triple(it, Icons.Filled.History, false)) }
-        results.forEach { add(Triple(it, Icons.Filled.Search, false)) }
+        results.forEach { add(Triple(it, Icons.Filled.Place, false)) }
     }
     if (rows.isEmpty()) return
-    Card(shape = RoundedCornerShape(20.dp), elevation = CardDefaults.cardElevation(6.dp)) {
-        LazyColumn(Modifier.heightIn(max = 380.dp)) {
-            items(rows) { (p, icon, _) ->
-                Row(Modifier.fillMaxWidth().clickable { onPick(p) }.padding(horizontal = 16.dp, vertical = 12.dp),
+    Glass(shape = RoundedCornerShape(20.dp)) {
+        LazyColumn(Modifier.heightIn(max = 400.dp).padding(vertical = 4.dp)) {
+            items(rows) { (p, icon, fav) ->
+                Row(Modifier.fillMaxWidth().clickable { onPick(p) }.padding(horizontal = 14.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(p.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (p.address.isNotBlank()) Text(p.address, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(TN.Surface2), contentAlignment = Alignment.Center) {
+                        Icon(icon, null, tint = if (fav) TN.Ember else TN.TextMid, modifier = Modifier.size(20.dp))
                     }
-                    p.distanceM?.let { Text(NavEngine.formatDistance(it, imperial), style = MaterialTheme.typography.labelMedium) }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(p.name, style = MaterialTheme.typography.titleSmall, color = TN.TextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (p.address.isNotBlank()) Text(p.address, style = MaterialTheme.typography.bodySmall,
+                            color = TN.TextMid, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    p.distanceM?.let { Text(NavEngine.formatDistance(it, imperial), style = MaterialTheme.typography.labelMedium, color = TN.TextMid) }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
             }
         }
     }
 }
 
+/** Turn card: ember tile with the arrow, huge condensed distance, street name, and the following maneuver. */
 @Composable
 private fun ManeuverBanner(active: NavState.Active, p: NavProgress?, s: AppSettings, rht: Boolean) {
-    Surface(shape = RoundedCornerShape(24.dp), color = Color(0xFF12161C), shadowElevation = 8.dp) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+    Surface(shape = RoundedCornerShape(26.dp), color = TN.Surface1, contentColor = TN.TextHi, shadowElevation = 12.dp,
+        border = BorderStroke(1.dp, TN.Outline)) {
+        Column {
             if (active.rerouting || p == null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(28.dp), color = Brand)
+                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(28.dp), color = TN.Ember, strokeWidth = 3.dp)
                     Spacer(Modifier.width(16.dp))
-                    Text(if (active.rerouting) "Recalculating…" else "Waiting for GPS…", color = Color.White, fontSize = 22.sp)
+                    Text((if (active.rerouting) "Recalculating" else "Waiting for GPS").uppercase(), style = MaterialTheme.typography.headlineSmall)
                 }
                 return@Column
             }
             val icon = ManeuverMapper.podIcon(p.upcoming, rht)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(maneuverVector(icon), null, tint = Brand, modifier = Modifier.size(72.dp))
-                    roundaboutExit(icon)?.let { Text("$it", color = Color.White, fontWeight = FontWeight.Black, fontSize = 18.sp) }
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(92.dp).clip(RoundedCornerShape(20.dp)).background(TN.EmberGradient), contentAlignment = Alignment.Center) {
+                    Icon(maneuverVector(icon), null, tint = Color.White, modifier = Modifier.size(70.dp))
+                    roundaboutExit(icon)?.let {
+                        Text("$it", color = TN.Ember, style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.clip(CircleShape).background(Color.White).padding(horizontal = 7.dp))
+                    }
                 }
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(NavEngine.formatDistance(p.distanceToManeuverM, s.imperial), color = Color.White,
-                        fontSize = 38.sp, fontWeight = FontWeight.Black)
-                    Text(p.upcoming.street ?: p.upcoming.instruction, color = Color(0xFFCCD3DB), fontSize = 18.sp,
+                    Text(NavEngine.formatDistance(p.distanceToManeuverM, s.imperial), style = MaterialTheme.typography.displayMedium, color = TN.TextHi, maxLines = 1)
+                    Text(p.upcoming.street ?: p.upcoming.instruction, style = MaterialTheme.typography.titleLarge, color = TN.TextMid,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             p.next?.let { n ->
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFF1E252E)).padding(horizontal = 10.dp, vertical = 6.dp),
+                Row(Modifier.fillMaxWidth().background(TN.Surface2).padding(horizontal = 18.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Then", color = Color(0xFF9DA7B3), fontSize = 14.sp)
+                    Text("THEN", style = MaterialTheme.typography.labelSmall, color = TN.TextLo)
+                    Spacer(Modifier.width(10.dp))
+                    Icon(maneuverVector(ManeuverMapper.podIcon(n, rht)), null, tint = TN.EmberHot, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(8.dp))
-                    Icon(maneuverVector(ManeuverMapper.podIcon(n, rht)), null, tint = Color.White, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(n.street ?: "", color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(n.street ?: n.instruction, style = MaterialTheme.typography.bodyLarge, color = TN.TextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -285,23 +309,25 @@ private fun ManeuverBanner(active: NavState.Active, p: NavProgress?, s: AppSetti
 
 @Composable
 private fun NavHud(p: NavProgress?, s: AppSettings, voiceOn: Boolean, onVoice: () -> Unit, onStop: () -> Unit) {
-    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Glass {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Speedo(p?.speedKmh ?: 0.0, p?.speedLimitKmh, s)
-            Spacer(Modifier.width(14.dp))
+            Box(Modifier.padding(horizontal = 14.dp).width(1.dp).height(44.dp).background(TN.Outline))
             Column(Modifier.weight(1f)) {
                 if (p != null) {
                     val eta = SimpleDateFormat(if (s.clock24h) "HH:mm" else "h:mm a", Locale.getDefault()).format(Date(p.etaEpochMs))
-                    Text(eta, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    Text(eta, style = MaterialTheme.typography.headlineMedium, color = TN.Go)
                     Text("${formatDuration(p.remainingS)} · ${NavEngine.formatDistance(p.remainingM, s.imperial)}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        style = MaterialTheme.typography.bodyMedium, color = TN.TextMid)
                 }
             }
-            IconButton(onClick = onVoice) {
-                Icon(if (voiceOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff, "Voice")
+            IconButton(onClick = onVoice, modifier = Modifier.clip(CircleShape).background(TN.Surface2)) {
+                Icon(if (voiceOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff, "Voice",
+                    tint = if (voiceOn) TN.TextHi else TN.TextLo)
             }
-            FilledTonalButton(onClick = onStop, colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(containerColor = Danger, contentColor = Color.White)) {
-                Icon(Icons.Filled.Stop, null); Spacer(Modifier.width(4.dp)); Text("End")
+            Spacer(Modifier.width(8.dp))
+            IconButton(onClick = onStop, modifier = Modifier.size(48.dp).clip(CircleShape).background(TN.Stop)) {
+                Icon(Icons.Filled.Close, "End navigation", tint = Color.White)
             }
         }
     }
@@ -313,15 +339,16 @@ private fun Speedo(speedKmh: Double, limitKmh: Int?, s: AppSettings) {
     val limitShown = limitKmh?.let { if (s.imperial) Math.round(it / 1.609).toInt() else it }
     val over = limitKmh != null && speedKmh > limitKmh + s.speedWarningTolerance
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${shown.toInt()}", fontSize = 34.sp, fontWeight = FontWeight.Black, color = if (over) Danger else MaterialTheme.colorScheme.onSurface)
-            Text(if (s.imperial) "mph" else "km/h", style = MaterialTheme.typography.labelSmall)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(IntrinsicSize.Max)) {
+            Text("${shown.toInt()}", style = MaterialTheme.typography.displaySmall, color = if (over) TN.Stop else TN.TextHi)
+            Text(if (s.imperial) "MPH" else "KM/H", style = MaterialTheme.typography.labelSmall, color = TN.TextLo)
         }
         if (limitShown != null) {
-            Spacer(Modifier.width(8.dp))
-            Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White).border(5.dp, Danger, CircleShape),
+            Spacer(Modifier.width(10.dp))
+            // Standard red-ring speed-limit sign; kept white so it reads like the real thing.
+            Box(Modifier.size(46.dp).clip(CircleShape).background(Color.White).border(5.dp, TN.Stop, CircleShape),
                 contentAlignment = Alignment.Center) {
-                Text("$limitShown", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("$limitShown", color = Color(0xFF111111), style = MaterialTheme.typography.titleMedium.copy(fontFamily = BarlowCondensed, fontWeight = FontWeight.ExtraBold))
             }
         }
     }
@@ -329,14 +356,18 @@ private fun Speedo(speedKmh: Double, limitKmh: Int?, s: AppSettings) {
 
 @Composable
 private fun IdleHud(speedKmh: Double, s: AppSettings, tripM: Double, recording: Boolean) {
-    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
-        Row(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Glass {
+        Row(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Speedo(speedKmh, null, s)
             if (recording) {
-                Spacer(Modifier.width(18.dp))
+                Box(Modifier.padding(horizontal = 16.dp).width(1.dp).height(40.dp).background(TN.Outline))
                 Column {
-                    Text("Trip", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(NavEngine.formatDistance(tripM, s.imperial), fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(TN.Stop))
+                        Spacer(Modifier.width(6.dp))
+                        Text("TRIP", style = MaterialTheme.typography.labelSmall, color = TN.TextLo)
+                    }
+                    Text(NavEngine.formatDistance(tripM, s.imperial), style = MaterialTheme.typography.headlineSmall)
                 }
             }
         }
@@ -349,35 +380,51 @@ private fun PreviewCard(
     onStart: () -> Unit, onCancel: () -> Unit, onAddStop: () -> Unit, onRemoveStop: (Int) -> Unit,
     onRetry: () -> Unit, onFavorite: (com.tripnav.app.nav.Destination) -> Unit,
 ) {
-    Card(shape = RoundedCornerShape(24.dp), elevation = CardDefaults.cardElevation(8.dp)) {
+    Glass(shape = RoundedCornerShape(26.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             preview.stops.forEachIndexed { i, s ->
+                val last = i == preview.stops.lastIndex
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (i == preview.stops.lastIndex) "🏁" else "${i + 1}", modifier = Modifier.width(28.dp), textAlign = TextAlign.Center)
-                    Text(s.name.ifBlank { "Via point" }, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (i == preview.stops.lastIndex) IconButton(onClick = { onFavorite(s) }) { Icon(Icons.Filled.StarBorder, "Favourite") }
-                    if (preview.stops.size > 1) IconButton(onClick = { onRemoveStop(i) }) { Icon(Icons.Filled.Close, "Remove") }
+                    Box(Modifier.size(28.dp).clip(CircleShape).background(if (last) TN.Ember else TN.Surface3), contentAlignment = Alignment.Center) {
+                        if (last) Icon(Icons.Filled.Flag, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        else Text("${i + 1}", style = MaterialTheme.typography.labelMedium, color = TN.TextHi)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(s.name.ifBlank { "Via point" }, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (last) IconButton(onClick = { onFavorite(s) }) { Icon(Icons.Filled.StarBorder, "Favourite", tint = TN.TextMid) }
+                    if (preview.stops.size > 1) IconButton(onClick = { onRemoveStop(i) }) { Icon(Icons.Filled.Close, "Remove", tint = TN.TextLo) }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             when {
                 preview.planning -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp); Spacer(Modifier.width(10.dp)); Text("Calculating route…")
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = TN.Ember)
+                    Spacer(Modifier.width(10.dp)); Text("Calculating route…", color = TN.TextMid)
                 }
                 preview.error != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(preview.error, color = Danger, modifier = Modifier.weight(1f)); OutlinedButton(onClick = onRetry) { Text("Retry") }
+                    Text(preview.error, color = TN.Stop, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onRetry) { Text("Retry") }
                 }
-                preview.route != null -> Text(
-                    "${formatDuration(preview.route.timeS)} · ${NavEngine.formatDistance(preview.route.lengthM, imperial)}",
-                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                )
+                preview.route != null -> Row(verticalAlignment = Alignment.Bottom) {
+                    Text(formatDuration(preview.route.timeS), style = MaterialTheme.typography.displaySmall, color = TN.Go)
+                    Spacer(Modifier.width(12.dp))
+                    Text(NavEngine.formatDistance(preview.route.lengthM, imperial), style = MaterialTheme.typography.titleLarge,
+                        color = TN.TextMid, modifier = Modifier.padding(bottom = 6.dp))
+                }
             }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onCancel) { Text("Cancel") }
-                OutlinedButton(onClick = onAddStop) { Icon(Icons.Filled.Add, null); Text("Stop") }
-                Button(onClick = onStart, enabled = preview.route != null, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Navigation, null); Spacer(Modifier.width(6.dp)); Text("Ride")
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCancel, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(TN.Surface2)) {
+                    Icon(Icons.Filled.Close, "Cancel", tint = TN.TextHi)
+                }
+                IconButton(onClick = onAddStop, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(TN.Surface2)) {
+                    Icon(Icons.Filled.AddLocationAlt, "Add stop", tint = TN.TextHi)
+                }
+                Button(onClick = onStart, enabled = preview.route != null, modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(16.dp)) {
+                    Icon(Icons.Filled.Navigation, null); Spacer(Modifier.width(8.dp))
+                    Text("RIDE", style = MaterialTheme.typography.titleLarge.copy(fontFamily = BarlowCondensed, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp))
                 }
             }
         }
@@ -387,39 +434,38 @@ private fun PreviewCard(
 @Composable
 private fun PodChip(state: PodLinkState, source: PodSource, mirroring: Boolean, onClick: () -> Unit) {
     val (label, color) = when (state) {
-        PodLinkState.READY -> (if (mirroring && source == PodSource.GOOGLE_MAPS) "Pod · mirroring Google Maps" else "Pod connected") to Ok
-        PodLinkState.AWAITING_PIN -> "Pod: enter PIN" to Brand
-        PodLinkState.CONNECTING, PodLinkState.HANDSHAKING -> "Pod connecting…" to Brand
-        PodLinkState.RECONNECTING -> "Pod reconnecting…" to Brand
-        PodLinkState.IDLE -> "Pod not connected" to MaterialTheme.colorScheme.onSurfaceVariant
+        PodLinkState.READY -> (if (mirroring && source == PodSource.GOOGLE_MAPS) "Pod · mirroring Maps" else "Pod connected") to TN.Go
+        PodLinkState.AWAITING_PIN -> "Pod: enter PIN" to TN.Warn
+        PodLinkState.CONNECTING, PodLinkState.HANDSHAKING -> "Pod connecting…" to TN.Warn
+        PodLinkState.RECONNECTING -> "Pod reconnecting…" to TN.Warn
+        PodLinkState.IDLE -> "Pod not connected" to TN.TextLo
     }
-    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp,
-        modifier = Modifier.clickable(onClick = onClick)) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (state == PodLinkState.READY) Icons.Filled.BluetoothConnected else Icons.Filled.Bluetooth, null, tint = color, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge)
-        }
+    Pill(label, color, if (state == PodLinkState.READY) Icons.Filled.BluetoothConnected else Icons.Filled.Bluetooth, onClick = onClick)
+}
+
+/** Cycles the map style Auto (sunset/sunrise) → Day → Night. */
+@Composable
+private fun MapThemeButton(mode: NightMode, onChange: (NightMode) -> Unit) {
+    val (icon, label, next) = when (mode) {
+        NightMode.AUTO_SUN -> Triple(Icons.Filled.BrightnessAuto, "Map theme: automatic", NightMode.ALWAYS_DAY)
+        NightMode.ALWAYS_DAY -> Triple(Icons.Filled.LightMode, "Map theme: day", NightMode.ALWAYS_NIGHT)
+        NightMode.ALWAYS_NIGHT -> Triple(Icons.Filled.DarkMode, "Map theme: night", NightMode.AUTO_SUN)
+    }
+    Box(Modifier.size(36.dp).clip(CircleShape).background(TN.Glass).border(1.dp, TN.OutlineStrong, CircleShape)
+        .clickable { onChange(next) }, contentAlignment = Alignment.Center) {
+        Icon(icon, label, tint = if (mode == NightMode.AUTO_SUN) TN.TextHi else TN.Ember, modifier = Modifier.size(19.dp))
     }
 }
 
 @Composable
-private fun OfflineChip(strict: Boolean) {
-    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.CloudOff, null, tint = Ok, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(if (strict) "Offline only" else "Offline map", style = MaterialTheme.typography.labelLarge)
-        }
-    }
-}
+private fun OfflineChip(strict: Boolean) = Pill(if (strict) "Offline only" else "Offline map", TN.Info, Icons.Filled.CloudOff)
 
 @Composable
 fun InfoCard(text: String, busy: Boolean = false) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
+    Glass(shape = RoundedCornerShape(20.dp)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (busy) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)) }
-            Text(text)
+            if (busy) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = TN.Ember); Spacer(Modifier.width(12.dp)) }
+            Text(text, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
@@ -428,4 +474,3 @@ fun formatDuration(seconds: Double): String {
     val m = Math.round(seconds / 60).toInt()
     return if (m < 60) "$m min" else "${m / 60} h ${m % 60} min"
 }
-

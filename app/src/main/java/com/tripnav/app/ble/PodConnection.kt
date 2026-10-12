@@ -1,5 +1,6 @@
 package com.tripnav.app.ble
 
+import android.os.SystemClock
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
@@ -73,6 +74,12 @@ class PodConnection(private val context: Context, private val settings: Settings
     @Volatile private var screen: ByteArray = PodProtocol.navIdle()
     @Volatile private var clockMode = false
     @Volatile private var callActive = false
+    /** True while the pod shows turn-by-turn guidance; a call then only flashes instead of taking over. */
+    @Volatile var guiding = false
+    private var callFlashUntil = 0L
+    /** A short-lived alert screen (e.g. phone battery low) shown over the normal screen. */
+    private var alertFrame: ByteArray? = null
+    private var alertUntil = 0L
     @Volatile private var night = false
     private var keepaliveTick = 0
 
@@ -136,7 +143,7 @@ class PodConnection(private val context: Context, private val settings: Settings
         val f = PodProtocol.withNight(frame, night)
         if (f.contentEquals(screen) && isReady) return@post
         screen = f
-        if (isReady && !callActive) enqueue(f)
+        if (isReady && overlay() == null) enqueue(f)
     }
 
     /** Clock mode: the pod shows its own clock; we only ping every 15 s to keep the link alive. */
@@ -150,15 +157,42 @@ class PodConnection(private val context: Context, private val settings: Settings
         if (night == value) return@post
         night = value
         screen = PodProtocol.withNight(screen, value)
-        if (isReady && !clockMode && !callActive) enqueue(screen)
+        if (isReady && !clockMode && overlay() == null) enqueue(screen)
     }
 
     fun setCallActive(active: Boolean) = handler.post {
         if (callActive == active) return@post
         callActive = active
+        if (active) callFlashUntil = SystemClock.uptimeMillis() + CALL_FLASH_MS
         if (!isReady) return@post
-        enqueue(if (active) PodProtocol.callIcon() else screen)
+        if (active) enqueue(PodProtocol.callIcon()) else restoreScreen()
     }
+
+    /** Puts the normal screen back after an overlay: the last frame, or the pod's own clock. */
+    private fun restoreScreen() {
+        if (clockMode) { enqueue(PodProtocol.navStopped()); enqueue(timeFrame()) } else enqueue(screen)
+    }
+
+    /**
+     * The pod can't overlay a call badge on the arrow, and has no text to show a caller's name. So while guiding,
+     * a call only flashes the call screen briefly and navigation carries on; otherwise the call screen stays up.
+     */
+    /** Shows [frame] for [durationMs], then returns to the normal screen. A call screen still takes priority. */
+    fun flash(frame: ByteArray, durationMs: Long) = handler.post {
+        alertFrame = PodProtocol.withNight(frame, night)
+        alertUntil = SystemClock.uptimeMillis() + durationMs
+        if (isReady && !showingCall()) enqueue(alertFrame!!)
+        handler.postDelayed({ if (isReady && overlay() == null) restoreScreen() }, durationMs + 50)
+    }
+
+    /** Frame that currently overrides the normal screen, if any. */
+    private fun overlay(): ByteArray? = when {
+        showingCall() -> PodProtocol.callIcon()
+        SystemClock.uptimeMillis() < alertUntil -> alertFrame
+        else -> null
+    }
+
+    private fun showingCall() = callActive && (!guiding || SystemClock.uptimeMillis() < callFlashUntil)
 
     /** One-off frame (debug console, control frames). */
     fun sendRaw(frame: ByteArray) = handler.post { if (writeChar != null) enqueue(frame) }
@@ -239,7 +273,7 @@ class PodConnection(private val context: Context, private val settings: Settings
             if (writeChar == null) return
             if (queue.isEmpty() && !writeBusy) {
                 when {
-                    callActive -> enqueue(PodProtocol.callIcon())
+                    overlay() != null -> enqueue(overlay()!!)
                     clockMode -> if (keepaliveTick % 15 == 0) enqueue(PodProtocol.pingFirmware())
                     else -> enqueue(screen)
                 }
@@ -411,6 +445,7 @@ class PodConnection(private val context: Context, private val settings: Settings
 
     companion object {
         private const val RECONNECT_DELAY_MS = 5_000L
+        private const val CALL_FLASH_MS = 3_000L
         private const val RECONNECT_WINDOW_MS = 10 * 60_000L
     }
 }

@@ -1,5 +1,9 @@
 package com.tripnav.app
 
+import android.content.ComponentName
+import android.service.notification.NotificationListenerService
+import androidx.core.app.NotificationManagerCompat
+import com.tripnav.app.mirror.MapsMirrorService
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -44,6 +48,10 @@ class TripNavApp : Application() {
             NotificationChannel(RIDE_CHANNEL, getString(R.string.channel_ride), NotificationManager.IMPORTANCE_LOW),
         )
         container.start()
+        // After an app update Android can leave the listener unbound until access is toggled; ask for a rebind.
+        if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) {
+            runCatching { NotificationListenerService.requestRebind(ComponentName(this, MapsMirrorService::class.java)) }
+        }
     }
 
     companion object {
@@ -95,10 +103,13 @@ class AppContainer(private val context: Context) {
         packs.delete(id)
     }
     val voice by lazy { VoiceGuide(context, settings) }
-    val presenter = PodPresenter(mainScope, pod, nav, mirror, location, settings)
+    val cameras = com.tripnav.app.nav.SpeedCameraWatch(mainScope, nav, data::cameras) { voice.announce(it, false) }
+    val battery = com.tripnav.app.pod.PhoneBattery(context)
+    val presenter = PodPresenter(mainScope, pod, nav, mirror, location, settings, cameras, battery)
 
     fun start() {
         nav.announcer = com.tripnav.app.nav.Announcer { text, urgent -> voice.announce(text, urgent) }
+        cameras.start()
         presenter.start()
         // A zone was installed, updated or deleted: drop cached search handles so the new files are used.
         mainScope.launch { packs.installed.collect { offlineSearch.close() } }

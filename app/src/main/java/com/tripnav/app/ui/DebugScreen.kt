@@ -1,5 +1,7 @@
 package com.tripnav.app.ui
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +54,7 @@ fun DebugScreen(vm: RideViewModel, onBack: () -> Unit) {
     val log by c.pod.log.collectAsState()
     val mirror by c.mirror.state.collectAsState()
     val mirrorBitmap by c.mirror.lastBitmap.collectAsState()
+    val mirrorRaw by c.mirror.lastRaw.collectAsState()
     val simulating by c.location.simulating.collectAsState()
     var hex by remember { mutableStateOf("") }
     var iconIdx by remember { mutableIntStateOf(0) }
@@ -59,11 +62,7 @@ fun DebugScreen(vm: RideViewModel, onBack: () -> Unit) {
     val listState = rememberLazyListState()
     LaunchedEffect(log.size) { if (log.isNotEmpty()) listState.scrollToItem(log.lastIndex) }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Developer tools", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = onBack) { Text("Close") }
-        }
+    Page("Developer tools", onBack = onBack, scroll = false) {
 
         // Icon tester: step through every icon ID to verify how the pod renders it.
         val (id, name) = icons[iconIdx]
@@ -99,6 +98,7 @@ fun DebugScreen(vm: RideViewModel, onBack: () -> Unit) {
             }) { Text("Send raw") }
         }
 
+        mirrorRaw?.let { Text("Maps: $it", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 3) }
         // Teach TripNav an unknown Google Maps arrow.
         mirror?.let { m ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -119,9 +119,9 @@ fun DebugScreen(vm: RideViewModel, onBack: () -> Unit) {
         }
 
         Spacer(Modifier.height(6.dp))
-        LazyColumn(Modifier.fillMaxWidth().weight(1f).background(Color(0xFF0B0E12)).padding(6.dp), state = listState) {
+        LazyColumn(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(14.dp)).background(Color(0xFF05070A)).padding(8.dp), state = listState) {
             items(log) { l ->
-                val color = when (l.dir) { '>' -> Color(0xFF7CC4FF); '<' -> Color(0xFF7EE787); '!' -> Color(0xFFFF7B72); else -> Color(0xFFC9D1D9) }
+                val color = when (l.dir) { '>' -> TN.Info; '<' -> TN.Go; '!' -> TN.Stop; else -> TN.TextMid }
                 Text("${l.time} ${l.dir} ${l.text}", color = color, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
             }
         }

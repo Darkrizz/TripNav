@@ -4,6 +4,6 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowBackground">@color/bg</item>
     </style>
-    <color name="bg">#FF0E1116</color>
-    <color name="brand">#FFFF7A1A</color>
+    <color name="bg">#FF090B0F</color>
+    <color name="brand">#FFFF6A1F</color>
 </resources>

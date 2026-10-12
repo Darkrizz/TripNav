@@ -1,5 +1,18 @@
 package com.tripnav.app.ui
 
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.AutoMode
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.BorderStroke
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -74,66 +87,77 @@ fun OfflineMapsScreen(vm: RideViewModel, onBack: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Offline maps", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = onBack) { Text("Done") }
+    Page("Offline maps", subtitle = "Maps, routing and search that work with no signal.", onBack = onBack) {
+        SectionLabel("Internet use")
+        GroupPanel {
+            ModeRow(s.dataMode == DataMode.AUTO, "Automatic", "Recommended. Uses downloaded zones; internet only outside them.",
+                Icons.Filled.AutoMode) { c.settings.setDataMode(DataMode.AUTO) }
+            RowDivider()
+            ModeRow(s.dataMode == DataMode.OFFLINE, "Offline only", "Never uses the internet. Works only inside downloaded zones.",
+                Icons.Filled.CloudOff) { c.settings.setDataMode(DataMode.OFFLINE) }
+            RowDivider()
+            ModeRow(s.dataMode == DataMode.ONLINE, "Online only", "Always online maps and routing; downloaded zones are ignored.",
+                Icons.Filled.Cloud) { c.settings.setDataMode(DataMode.ONLINE) }
         }
 
-        Text("Internet use", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        ModeRow(s.dataMode == DataMode.AUTO, "Automatic (recommended)",
-            "Downloaded zones for maps, routing and search; internet only outside them.") { c.settings.setDataMode(DataMode.AUTO) }
-        ModeRow(s.dataMode == DataMode.OFFLINE, "Offline only",
-            "Never uses the internet. Works only inside downloaded zones.") { c.settings.setDataMode(DataMode.OFFLINE) }
-        ModeRow(s.dataMode == DataMode.ONLINE, "Online only",
-            "Always uses online maps and routing; downloaded zones are ignored.") { c.settings.setDataMode(DataMode.ONLINE) }
-
-        Spacer(Modifier.height(16.dp))
-        Text("On this phone", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        if (installed.isEmpty()) Text("No zones downloaded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SectionLabel("On this phone")
+        if (installed.isEmpty()) Panel { Text("No zones downloaded yet.", color = TN.TextMid) }
         installed.forEach { iz ->
             val newer = available?.zones?.firstOrNull { it.id == iz.zone.id }?.takeIf { !c.packs.isUpToDate(it) }
-            ZoneCard(iz.zone, subtitle = "Installed · ${size(iz.zone.totalBytes)}" + if (newer != null) " · update available" else "") {
+            ZoneCard(iz.zone, "Installed · ${size(iz.zone.totalBytes)}" + if (newer != null) " · update available" else "",
+                installed = true) {
                 if (newer != null) Button(onClick = { c.packs.download(newer, s.packsUrl) }, enabled = jobs[newer.id] == null) { Text("Update") }
-                OutlinedButton(onClick = { confirmDelete = iz.zone }) { Text("Delete") }
+                OutlinedButton(onClick = { confirmDelete = iz.zone }, border = BorderStroke(1.dp, TN.OutlineStrong)) { Text("Delete", color = TN.TextHi) }
                 jobs[iz.zone.id]?.let { JobView(it) { c.packs.cancel(iz.zone.id) } }
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-        Text("Download", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        SectionLabel("Download")
         when {
-            s.dataMode == DataMode.OFFLINE -> Text("Switch to Automatic to download zones, or install them from a folder below.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            loadingList -> CircularProgressIndicator()
-            listError != null -> Column {
-                Text("Couldn't load the zone list: $listError", color = Danger)
+            s.dataMode == DataMode.OFFLINE -> Panel {
+                Text("Switch to Automatic to download zones, or install them from a folder below.", color = TN.TextMid)
+            }
+            loadingList -> CircularProgressIndicator(color = TN.Ember)
+            listError != null -> Panel(accent = TN.Stop) {
+                Text("Couldn't load the zone list", style = MaterialTheme.typography.titleSmall)
+                Text(listError!!, style = MaterialTheme.typography.bodySmall, color = TN.TextMid)
                 TextButton(onClick = ::refresh) { Text("Retry") }
             }
         }
-        available?.zones?.filter { z -> installed.none { it.zone.id == z.id } }?.forEach { z ->
-            ZoneCard(z, subtitle = size(z.totalBytes)) {
+        val downloadable = available?.zones?.filter { z -> installed.none { it.zone.id == z.id } }.orEmpty()
+        if (s.dataMode != DataMode.OFFLINE && !loadingList && listError == null && downloadable.isEmpty() && installed.isNotEmpty())
+            Panel { Text("All available zones are installed.", color = TN.TextMid) }
+        downloadable.forEach { z ->
+            ZoneCard(z, size(z.totalBytes), installed = false) {
                 val job = jobs[z.id]
-                if (job == null || job is ZoneJob.Failed) Button(onClick = { c.packs.download(z, s.packsUrl) }) { Text(if (job == null) "Download" else "Retry") }
+                if (job == null || job is ZoneJob.Failed) Button(onClick = { c.packs.download(z, s.packsUrl) }) {
+                    Icon(Icons.Filled.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (job == null) "Download" else "Retry")
+                }
                 job?.let { JobView(it) { c.packs.cancel(z.id) } }
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-        Text("Install from a folder", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text("Copy packs.json and the zone files to the phone (e.g. over USB), then pick that folder.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Choose folder") }
-        message?.let { Text(it, modifier = Modifier.padding(top = 6.dp)) }
+        SectionLabel("Install from a folder")
+        Panel {
+            Text("Copy packs.json and the zone files into one folder on the phone (e.g. over USB), then pick that folder.",
+                style = MaterialTheme.typography.bodyMedium, color = TN.TextMid)
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = { folderPicker.launch(null) }, border = BorderStroke(1.dp, TN.OutlineStrong)) {
+                Icon(Icons.Filled.FolderOpen, null, Modifier.size(18.dp), tint = TN.TextHi); Spacer(Modifier.width(6.dp)); Text("Choose folder", color = TN.TextHi)
+            }
+            message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = TN.Info, modifier = Modifier.padding(top = 8.dp)) }
+        }
 
-        Spacer(Modifier.height(16.dp))
-        var url by remember(s.packsUrl) { mutableStateOf(s.packsUrl) }
-        OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Zone list URL (packs.json)") },
-            singleLine = true, modifier = Modifier.fillMaxWidth())
-        TextButton(onClick = { c.settings.setPacksUrl(url) }) { Text("Save") }
-        Text("Map data © OpenStreetMap contributors (ODbL).", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(24.dp))
+        SectionLabel("Advanced")
+        Panel {
+            var url by remember(s.packsUrl) { mutableStateOf(s.packsUrl) }
+            OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Zone list URL (packs.json)") },
+                singleLine = true, modifier = Modifier.fillMaxWidth(), colors = tnFieldColors())
+            TextButton(onClick = { c.settings.setPacksUrl(url) }) { Text("Save") }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Map data © OpenStreetMap contributors (ODbL).", style = MaterialTheme.typography.bodySmall, color = TN.TextLo,
+            modifier = Modifier.padding(horizontal = 4.dp))
     }
 
     confirmDelete?.let { z ->
@@ -148,26 +172,26 @@ fun OfflineMapsScreen(vm: RideViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun ModeRow(selected: Boolean, title: String, detail: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = selected, onClick = onClick)
-        Column {
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+private fun ModeRow(selected: Boolean, title: String, detail: String, icon: ImageVector, onClick: () -> Unit) =
+    ListRow(title, detail, icon = icon, iconTint = if (selected) TN.Ember else TN.TextMid, onClick = onClick) {
+        RadioButton(selected = selected, onClick = onClick,
+            colors = RadioButtonDefaults.colors(selectedColor = TN.Ember, unselectedColor = TN.OutlineStrong))
     }
-}
 
 @Composable
-private fun ZoneCard(zone: Zone, subtitle: String, actions: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(14.dp)) {
-            Text(zone.name, fontWeight = FontWeight.SemiBold)
-            if (zone.description.isNotBlank()) Text(zone.description, style = MaterialTheme.typography.bodySmall)
-            Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { actions() }
+private fun ZoneCard(zone: Zone, subtitle: String, installed: Boolean, actions: @Composable () -> Unit) {
+    Panel(Modifier.padding(bottom = 8.dp), accent = TN.Go.takeIf { installed }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(zone.name, style = MaterialTheme.typography.titleLarge)
+                if (zone.description.isNotBlank()) Text(zone.description, style = MaterialTheme.typography.bodySmall, color = TN.TextMid)
+            }
+            if (installed) Icon(Icons.Filled.CheckCircle, "Installed", tint = TN.Go)
         }
+        Spacer(Modifier.height(6.dp))
+        Text(subtitle.uppercase(), style = MaterialTheme.typography.labelSmall, color = if (installed) TN.Go else TN.TextLo)
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { actions() }
     }
 }
 

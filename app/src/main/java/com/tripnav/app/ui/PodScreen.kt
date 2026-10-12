@@ -1,5 +1,15 @@
 package com.tripnav.app.ui
 
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.BluetoothConnected
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.app.Activity
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
@@ -94,97 +104,137 @@ fun PodScreen(vm: RideViewModel, onOpenDebug: () -> Unit) {
         address?.let(::connect) ?: run { error = "Pairing returned no device" }
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text("TripperPod", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
+    // Re-checked on resume so the status updates after returning from the system settings page.
+    var granted by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        granted = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+        onPauseOrDispose { }
+    }
+    val mirrored by c.mirror.state.collectAsState()
+    val mirrorRaw by c.mirror.lastRaw.collectAsState()
 
-        Card(shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                val label = when (status.state) {
-                    PodLinkState.READY -> "Connected"
-                    PodLinkState.AWAITING_PIN -> "Waiting for PIN"
-                    PodLinkState.CONNECTING -> "Connecting…"
-                    PodLinkState.HANDSHAKING -> "Starting session…"
-                    PodLinkState.RECONNECTING -> "Reconnecting (attempt ${status.reconnectAttempt})…"
-                    PodLinkState.IDLE -> "Not connected"
-                }
-                Text(label, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = if (status.state == PodLinkState.READY) Ok else MaterialTheme.colorScheme.onSurface)
-                status.address?.let { Text("Device $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                status.firmware?.let { Text("Firmware $it") }
-                status.serial?.let { Text("Serial $it") }
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (status.state == PodLinkState.IDLE) {
-                        val last = settings.lastPod
-                        if (last != null) Button(onClick = { connect(last) }) { Text("Connect") }
-                    } else {
-                        OutlinedButton(onClick = { c.pod.disconnect() }) { Text("Disconnect") }
-                    }
-                    if (status.state == PodLinkState.READY) {
-                        FilledTonalButton(onClick = {
-                            c.pod.sendRaw(NavFrame.build(NavFrameSpec(PodIcon.TURN_RIGHT, 150, PodIcon.TURN_LEFT, SecondaryField.Distance(800), imperial = settings.imperial)))
-                        }) { Text("Test arrow") }
-                        FilledTonalButton(onClick = { c.pod.syncTime() }) { Text("Sync clock") }
-                    }
-                }
-            }
+    Page("TripperPod", action = {
+        IconButton(onClick = onOpenDebug) { Icon(Icons.Filled.Tune, "Developer tools", tint = TN.TextMid) }
+    }) {
+        val (label, accent) = when (status.state) {
+            PodLinkState.READY -> "Connected" to TN.Go
+            PodLinkState.AWAITING_PIN -> "Enter PIN" to TN.Warn
+            PodLinkState.CONNECTING -> "Connecting" to TN.Warn
+            PodLinkState.HANDSHAKING -> "Starting session" to TN.Warn
+            PodLinkState.RECONNECTING -> "Reconnecting" to TN.Warn
+            PodLinkState.IDLE -> "Not connected" to TN.TextLo
         }
-
-        Spacer(Modifier.height(16.dp))
-        Text("Pair a pod", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text("Switch the pod on. It appears as RE_DISP.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                c.scanner.associate(context as Activity,
-                    onChooser = { cdmLauncher.launch(IntentSenderRequest.Builder(it).build()) },
-                    onError = { error = it })
-            }) { Icon(Icons.Filled.Link, null); Spacer(Modifier.width(6.dp)); Text("Pair (recommended)") }
-            OutlinedButton(onClick = { if (scanning) c.scanner.stop() else c.scanner.start() }) {
-                Icon(Icons.Filled.BluetoothSearching, null); Spacer(Modifier.width(6.dp)); Text(if (scanning) "Stop scan" else "Scan")
+        Panel(accent = accent.takeIf { status.state != PodLinkState.IDLE }, padding = 20.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(accent.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+                    if (status.state in listOf(PodLinkState.CONNECTING, PodLinkState.HANDSHAKING, PodLinkState.RECONNECTING))
+                        CircularProgressIndicator(Modifier.size(26.dp), color = accent, strokeWidth = 3.dp)
+                    else Icon(if (status.state == PodLinkState.READY) Icons.Filled.BluetoothConnected else Icons.Filled.Bluetooth,
+                        null, tint = accent, modifier = Modifier.size(28.dp))
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(label.uppercase(), style = MaterialTheme.typography.headlineSmall, color = if (status.state == PodLinkState.READY) TN.Go else TN.TextHi)
+                    Text(
+                        when {
+                            status.state == PodLinkState.RECONNECTING -> "Attempt ${status.reconnectAttempt} · ${status.address ?: ""}"
+                            status.address != null -> status.address!!
+                            else -> "Switch the pod on, then pair it below"
+                        },
+                        style = MaterialTheme.typography.bodySmall, color = TN.TextMid,
+                    )
+                }
             }
-        }
-        if (scanning) { Spacer(Modifier.height(8.dp)); CircularProgressIndicator(Modifier.size(24.dp)) }
-        found.forEach { p ->
-            Card(Modifier.fillMaxWidth().padding(top = 8.dp).clickable { connect(p.address) }, shape = RoundedCornerShape(16.dp)) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(p.name, fontWeight = FontWeight.SemiBold)
-                        Text(p.address, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Text("${p.rssi} dBm", style = MaterialTheme.typography.labelMedium)
+            if (status.firmware != null || status.serial != null) {
+                Spacer(Modifier.height(16.dp))
+                Row {
+                    status.firmware?.let { Stat(it, "Firmware", Modifier.weight(1f)) }
+                    status.serial?.let { Stat(it, "Serial", Modifier.weight(1f)) }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (status.state == PodLinkState.IDLE) {
+                    settings.lastPod?.let { last -> Button(onClick = { connect(last) }) { Text("Connect") } }
+                } else {
+                    OutlinedButton(onClick = { c.pod.disconnect() }, border = BorderStroke(1.dp, TN.OutlineStrong)) { Text("Disconnect", color = TN.TextHi) }
+                }
+                if (status.state == PodLinkState.READY) {
+                    FilledTonalButton(onClick = {
+                        c.pod.sendRaw(NavFrame.build(NavFrameSpec(PodIcon.TURN_RIGHT, 150, PodIcon.TURN_LEFT, SecondaryField.Distance(800), imperial = settings.imperial)))
+                    }) { Text("Test arrow") }
+                    FilledTonalButton(onClick = { c.pod.syncTime() }) { Text("Sync clock") }
                 }
             }
         }
-        error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = Danger) }
+
+        SectionLabel("Pair a pod")
+        Panel {
+            Text("Switch the pod on. It shows up as RE_DISP.", style = MaterialTheme.typography.bodyMedium, color = TN.TextMid)
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    c.scanner.associate(context as Activity,
+                        onChooser = { cdmLauncher.launch(IntentSenderRequest.Builder(it).build()) },
+                        onError = { error = it })
+                }) { Icon(Icons.Filled.Link, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Pair") }
+                OutlinedButton(onClick = { if (scanning) c.scanner.stop() else c.scanner.start() }, border = BorderStroke(1.dp, TN.OutlineStrong)) {
+                    if (scanning) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = TN.Info)
+                    else Icon(Icons.Filled.BluetoothSearching, null, Modifier.size(18.dp), tint = TN.TextHi)
+                    Spacer(Modifier.width(6.dp)); Text(if (scanning) "Stop scan" else "Scan", color = TN.TextHi)
+                }
+            }
+            error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = TN.Stop, style = MaterialTheme.typography.bodySmall) }
+        }
+        if (found.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            GroupPanel {
+                found.forEachIndexed { i, p ->
+                    if (i > 0) RowDivider()
+                    ListRow(p.name, p.address, icon = Icons.Filled.Bluetooth, iconTint = TN.Info, onClick = { connect(p.address) }) {
+                        Text("${p.rssi} dBm", style = MaterialTheme.typography.labelMedium, color = TN.TextMid)
+                    }
+                }
+            }
+        }
 
         if (settings.knownPods.isNotEmpty()) {
-            Spacer(Modifier.height(20.dp))
-            Text("Paired pods", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            settings.knownPods.forEach { mac ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(mac, Modifier.weight(1f))
-                    TextButton(onClick = { connect(mac) }) { Text("Connect") }
-                    TextButton(onClick = { c.pod.forget(mac) }) { Text("Forget", color = Danger) }
+            SectionLabel("Paired pods")
+            GroupPanel {
+                settings.knownPods.forEachIndexed { i, mac ->
+                    if (i > 0) RowDivider()
+                    ListRow("RE_DISP", mac + if (mac == settings.lastPod) " · last used" else "", icon = Icons.Filled.Memory) {
+                        TextButton(onClick = { connect(mac) }) { Text("Connect") }
+                        TextButton(onClick = { c.pod.forget(mac) }) { Text("Forget", color = TN.Stop) }
+                    }
                 }
             }
         }
 
-        Spacer(Modifier.height(20.dp))
-        Text("Google Maps mirroring", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        val granted = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
-        Text(
-            if (granted) "Enabled. Start navigation in Google Maps and the turns appear on the pod. TripNav's own navigation always takes priority."
-            else "Lets TripNav show Google Maps turns on the pod. Needs notification access; nothing leaves your phone.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (!granted) {
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Grant notification access") }
+        SectionLabel("Google Maps mirroring")
+        Panel(accent = TN.Go.takeIf { mirrored != null }) {
+            Text(
+                if (granted) "Start navigation in Google Maps and its turns appear on the pod. TripNav's own navigation always takes priority."
+                else "Show Google Maps turns on the pod. Needs notification access; nothing leaves your phone.",
+                style = MaterialTheme.typography.bodyMedium, color = TN.TextMid,
+            )
+            Spacer(Modifier.height(12.dp))
+            if (granted) {
+                Pill(
+                    mirrored?.let { m -> if (m.distanceM > 0) "${m.instruction} · ${m.distanceM} m" else m.instruction }
+                        ?: if (mirrorRaw != null) "Notification seen but not understood" else "Waiting for Google Maps…",
+                    color = when { mirrored != null -> TN.Go; mirrorRaw != null -> TN.Warn; else -> TN.TextLo },
+                )
+            } else {
+                Button(onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Grant notification access") }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Switch greyed out? Android Settings › Apps › TripNav › ⋮ › Allow restricted settings, then try again.",
+                    style = MaterialTheme.typography.bodySmall, color = TN.TextLo,
+                )
+            }
         }
-
-        Spacer(Modifier.height(20.dp))
-        TextButton(onClick = onOpenDebug) { Text("Developer tools") }
     }
 
     if (status.state == PodLinkState.AWAITING_PIN) PinDialog(

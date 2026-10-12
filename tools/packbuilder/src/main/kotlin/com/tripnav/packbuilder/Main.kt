@@ -47,6 +47,8 @@ fun main(args: Array<String>) {
     }
 }
 
+data class Camera(val lat: Double, val lon: Double, val maxspeed: Int?)
+
 data class Entry(
     val name: String, val local: String?, val translit: String?, val kind: String, val rank: Int, val lat: Double, val lon: Double,
 )
@@ -87,9 +89,11 @@ object SearchIndexBuilder {
 
     fun build(pbf: Path, out: File) {
         val rows = ConcurrentLinkedQueue<Entry>()
+        val cameras = ConcurrentLinkedQueue<Camera>()
         val profile = object : Profile {
             override fun name() = "tripnav-search"
             override fun processFeature(sf: SourceFeature, features: FeatureCollector) {
+                runCatching { camera(sf)?.let(cameras::add) }
                 runCatching { collect(sf)?.let(rows::add) }
             }
         }
@@ -100,7 +104,7 @@ object SearchIndexBuilder {
             .addOsmSource("osm", pbf)
             .overwriteOutput(tmp.resolve("unused.mbtiles"))
             .run()
-        write(dedupe(rows.toList()), out)
+        write(dedupe(rows.toList()), cameras.toList(), out)
         tmp.toFile().deleteRecursively()
     }
 
@@ -124,6 +128,14 @@ object SearchIndexBuilder {
     private fun lonLat(p: org.locationtech.jts.geom.Geometry): Pair<Double, Double> {
         val c = (p as Point).coordinate
         return GeoUtils.getWorldLon(c.x) to GeoUtils.getWorldLat(c.y)
+    }
+
+    /** Fixed speed cameras (OSM highway=speed_camera nodes), used for the pod's camera warning. */
+    private fun camera(sf: SourceFeature): Camera? {
+        if (!sf.isPoint || sf.getString("highway") != "speed_camera") return null
+        val (lon, lat) = lonLat(sf.worldGeometry())
+        val limit = sf.getString("maxspeed")?.trim()?.takeWhile { it.isDigit() }?.toIntOrNull()
+        return Camera(lat, lon, limit)
     }
 
     private fun collect(sf: SourceFeature): Entry? {
@@ -187,7 +199,7 @@ object SearchIndexBuilder {
         }
     }
 
-    private fun write(entries: List<Entry>, out: File) {
+    private fun write(entries: List<Entry>, cameras: List<Camera>, out: File) {
         out.delete()
         val ctx = contexts(entries)
         DriverManager.getConnection("jdbc:sqlite:${out.absolutePath}").use { c ->
@@ -216,12 +228,23 @@ object SearchIndexBuilder {
                 )
                 s.executeUpdate("INSERT INTO places_fts(places_fts) VALUES('rebuild')")
                 s.executeUpdate("CREATE INDEX places_geo ON places(lat, lon)")
+                s.executeUpdate("CREATE TABLE cameras(lat REAL NOT NULL, lon REAL NOT NULL, maxspeed INTEGER)")
+                s.executeUpdate("CREATE INDEX cameras_geo ON cameras(lat, lon)")
                 s.executeUpdate("INSERT INTO meta VALUES ('schema','1'), ('built','${LocalDate.now()}'), ('count','${entries.size}')")
+            }
+            c.prepareStatement("INSERT INTO cameras(lat, lon, maxspeed) VALUES (?,?,?)").use { ps ->
+                cameras.distinct().forEach { cam ->
+                    ps.setDouble(1, cam.lat); ps.setDouble(2, cam.lon)
+                    if (cam.maxspeed != null) ps.setInt(3, cam.maxspeed) else ps.setNull(3, java.sql.Types.INTEGER)
+                    ps.addBatch()
+                }
+                ps.executeBatch()
             }
             c.commit()
             c.autoCommit = true
             c.createStatement().use { it.executeUpdate("VACUUM") }
         }
+        println("speed cameras: ${cameras.distinct().size}")
         println("search index: ${entries.size} entries -> ${out.length() / 1_048_576} MB")
     }
 }

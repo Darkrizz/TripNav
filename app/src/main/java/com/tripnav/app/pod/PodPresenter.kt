@@ -9,6 +9,7 @@ import com.tripnav.app.nav.ManeuverMapper
 import com.tripnav.app.nav.NavEngine
 import com.tripnav.app.nav.NavProgress
 import com.tripnav.app.nav.NavState
+import com.tripnav.app.nav.SpeedCameraWatch
 import com.tripnav.app.settings.AppSettings
 import com.tripnav.app.settings.NightMode
 import com.tripnav.app.settings.PodIdle
@@ -43,9 +44,13 @@ class PodPresenter(
     private val mirror: MirrorHub,
     private val location: LocationSource,
     private val settings: SettingsRepository,
+    private val cameras: SpeedCameraWatch,
+    private val battery: PhoneBattery,
 ) {
+    private var lastBatteryPercent: Int? = null
+
     @Volatile var source: PodSource = PodSource.NONE
-        private set
+        private set(v) { field = v; pod.guiding = v == PodSource.TRIPNAV || v == PodSource.GOOGLE_MAPS }
     private var lastCompass: CompassDirection = CompassDirection.N
 
     fun start() {
@@ -58,6 +63,7 @@ class PodPresenter(
         scope.launch {
             while (isActive) {
                 delay(5_000)
+                checkBattery()
                 render(Inputs(nav.state.value, mirror.state.value, location.location.value, settings.settings.value, pod.status.value.state))
             }
         }
@@ -78,7 +84,7 @@ class PodPresenter(
                 source = PodSource.TRIPNAV
                 val p = n.progress
                 when {
-                    n.rerouting -> pod.show(PodProtocol.loadingScreen(night))
+                    n.rerouting -> pod.show(NavFrame.build(NavFrameSpec(PodIcon.REROUTE, 0, night = night, imperial = imperial)))
                     p == null -> pod.show(PodProtocol.loadingScreen(night))
                     else -> pod.show(NavFrame.build(navSpec(p, i.s, night)))
                 }
@@ -120,7 +126,20 @@ class PodPresenter(
             PodSecondary.DISTANCE_LEFT -> SecondaryField.Distance(p.remainingM.toInt())
             PodSecondary.NEXT_DISTANCE -> p.next?.let { SecondaryField.Distance(it.lengthM.toInt()) } ?: SecondaryField.None
         }
-        return NavFrameSpec(icon, p.distanceToManeuverM.toInt(), nextIcon, secondary, night, s.imperial)
+        // An upcoming speed camera takes over the bottom line with the pod's own camera countdown.
+        val camera = cameras.nextCameraM(p.alongM)?.let { SecondaryField.SpeedCamera(it.toInt()) }
+        return NavFrameSpec(icon, p.distanceToManeuverM.toInt(), nextIcon, camera ?: secondary, night, s.imperial)
+    }
+
+    /** Flashes the pod's low-battery screen when the phone drops past 15 %, 10 % and 5 % while discharging. */
+    private fun checkBattery() {
+        val now = battery.read() ?: return
+        val crossed = PhoneBattery.crossed(lastBatteryPercent, now)
+        lastBatteryPercent = now.percent
+        if (crossed != null && pod.status.value.state == PodLinkState.READY) {
+            val night = isNight(settings.settings.value, location.location.value)
+            pod.flash(NavFrame.build(NavFrameSpec(PodIcon.LOW_BATTERY, 0, night = night)), BATTERY_FLASH_MS)
+        }
     }
 
     private fun isNight(s: AppSettings, loc: Location?): Boolean = when (s.nightMode) {
@@ -130,4 +149,6 @@ class PodPresenter(
             val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY); h < 6 || h >= 19
         }
     }
+
+    companion object { private const val BATTERY_FLASH_MS = 4_000L }
 }

@@ -13,7 +13,14 @@ import com.tripnav.app.settings.SettingsRepository
 import com.tripnav.app.util.LatLon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
+import okhttp3.Request
 
 /** What the map should load. [key] changes whenever the style must be reloaded. */
 data class MapStyleSpec(val key: String, val uri: String? = null, val json: String? = null)
@@ -69,6 +76,34 @@ class DataPolicy(
                 online()
             }
         }
+    }
+
+    /**
+     * Fixed speed cameras in a box: from the installed packs, plus OpenStreetMap's Overpass API when the box
+     * isn't fully covered by a pack and the internet may be used.
+     */
+    suspend fun cameras(minLat: Double, minLon: Double, maxLat: Double, maxLon: Double): List<LatLon> = withContext(Dispatchers.IO) {
+        val zones = packs.installed.value
+        val fromPacks = if (mode == DataMode.ONLINE) null else offlineSearch.cameras(zones, minLat, minLon, maxLat, maxLon)
+        val local = fromPacks.orEmpty()
+        val corners = listOf(LatLon(minLat, minLon), LatLon(minLat, maxLon), LatLon(maxLat, minLon), LatLon(maxLat, maxLon))
+        // Packs built before camera data existed (fromPacks == null) don't count as covering the area.
+        val covered = fromPacks != null && packs.zoneCovering(corners) != null
+        if (covered || !isOnline()) return@withContext local
+        val q = "[out:json][timeout:25];node[\"highway\"=\"speed_camera\"]($minLat,$minLon,$maxLat,$maxLon);out;"
+        // The public Overpass servers are often busy; try each in turn and give up quietly.
+        val online = OVERPASS.firstNotNullOfOrNull { url ->
+            runCatching {
+                val req = Request.Builder().url(url).post(FormBody.Builder().add("data", q).build()).build()
+                http.newCall(req).execute().use { r ->
+                    if (!r.isSuccessful) return@use null
+                    Json.parseToJsonElement(r.body!!.string()).jsonObject["elements"]!!.jsonArray.map { e ->
+                        LatLon(e.jsonObject["lat"]!!.jsonPrimitive.double, e.jsonObject["lon"]!!.jsonPrimitive.double)
+                    }
+                }
+            }.getOrNull()
+        }.orEmpty()
+        (local + online).distinct()
     }
 
     suspend fun search(query: String, near: LatLon?): List<Place> = withContext(Dispatchers.IO) {
@@ -131,3 +166,10 @@ class DataPolicy(
             """{"version":8,"sources":{},"layers":[{"id":"bg","type":"background","paint":{"background-color":"#1b2027"}}]}"""
     }
 }
+
+/** Public Overpass API servers, tried in order (they are often busy). */
+private val OVERPASS = listOf(
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+)

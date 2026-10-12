@@ -96,7 +96,9 @@ object Sun {
     /** Returns true if the sun is below the horizon (civil twilight excluded) at [epochMs] for this position. */
     fun isNight(lat: Double, lon: Double, epochMs: Long = System.currentTimeMillis()): Boolean {
         val days = epochMs / 86_400_000.0 + 2440587.5 - 2451545.0
-        val n = kotlin.math.floor(days + 0.0008)
+        // Use the solar day whose noon is nearest to now. (Flooring the UTC-based day count picked
+        // yesterday's sun for anywhere east of Greenwich before UTC noon, e.g. India before 17:30 IST.)
+        val n = kotlin.math.round(days + lon / 360.0)
         val jStar = n - lon / 360.0
         val m = (357.5291 + 0.98560028 * jStar) % 360
         val mr = Math.toRadians(m)

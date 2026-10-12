@@ -50,6 +50,9 @@ class LogicTest {
         assertEquals(PodIcon.SLIGHT_RIGHT, MirrorParser.parse("500 ft", "Slight right toward I-95")!!.icon)
         assertEquals(PodIcon.TURN_RIGHT, MirrorParser.parse("150 m", "Vire à direita na Rua Augusta")!!.icon)
         assertEquals(PodIcon.roundabout(3, false), MirrorParser.parse("200 m", "At the roundabout, take the third exit", rightHand = false)!!.icon)
+        val near = MirrorParser.parse("Turn right", "onto MG Road")!!
+        assertEquals(null, near.distanceM); assertEquals(PodIcon.TURN_RIGHT, near.icon)
+        assertEquals(null, MirrorParser.parse("", ""))
     }
 
     @Test fun valhallaManeuverMapping() {
@@ -84,5 +87,51 @@ class LogicTest {
         // London, 2026-06-21: noon is day, 01:00 UTC is night.
         assertTrue(!Sun.isNight(51.5, -0.12, 1_782_043_200_000L))
         assertTrue(Sun.isNight(51.5, -0.12, 1_782_003_600_000L))
+    }
+
+    @Test
+    fun sunDayNight() {
+        fun ist(h: Int, m: Int = 0) = java.time.ZonedDateTime.of(2026, 10, 12, h, m, 0, 0, java.time.ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli()
+        val (lat, lon) = 12.97 to 77.59 // Bengaluru: sunrise ≈ 06:08, sunset ≈ 18:02 IST
+        assertEquals(true, com.tripnav.app.util.Sun.isNight(lat, lon, ist(5, 30)))
+        assertEquals(false, com.tripnav.app.util.Sun.isNight(lat, lon, ist(6, 30)))
+        assertEquals(false, com.tripnav.app.util.Sun.isNight(lat, lon, ist(10)))
+        assertEquals(false, com.tripnav.app.util.Sun.isNight(lat, lon, ist(14)))
+        assertEquals(false, com.tripnav.app.util.Sun.isNight(lat, lon, ist(17, 40)))
+        assertEquals(true, com.tripnav.app.util.Sun.isNight(lat, lon, ist(18, 30)))
+        assertEquals(true, com.tripnav.app.util.Sun.isNight(lat, lon, ist(23, 50)))
+        assertEquals(true, com.tripnav.app.util.Sun.isNight(lat, lon, ist(0, 30)))
+        // West of Greenwich too (New York, 12 Oct: sunrise ≈ 07:08, sunset ≈ 18:22 EDT).
+        val ny = { h: Int -> java.time.ZonedDateTime.of(2026, 10, 12, h, 0, 0, 0, java.time.ZoneId.of("America/New_York")).toInstant().toEpochMilli() }
+        assertEquals(false, com.tripnav.app.util.Sun.isNight(40.71, -74.0, ny(12)))
+        assertEquals(true, com.tripnav.app.util.Sun.isNight(40.71, -74.0, ny(21)))
+        assertEquals(true, com.tripnav.app.util.Sun.isNight(40.71, -74.0, ny(5)))
+    }
+
+    @Test
+    fun speedCamerasAlongRoute() {
+        // Straight 2 km road heading north; cameras on it, beside it, and far off it.
+        val pts = (0..20).map { com.tripnav.app.util.LatLon(19.0 + it * 0.0009, 72.8) }
+        val route = Route(pts, emptyList(), 2000.0, 120.0, emptyList())
+        val onRoad = com.tripnav.app.util.LatLon(19.0 + 5 * 0.0009, 72.8)        // ~500 m along
+        val beside = com.tripnav.app.util.LatLon(19.0 + 15 * 0.0009, 72.80015)   // ~16 m off, ~1500 m along
+        val far = com.tripnav.app.util.LatLon(19.0 + 10 * 0.0009, 72.81)         // ~1 km off
+        val along = com.tripnav.app.nav.CameraMatcher.along(route, listOf(beside, far, onRoad))
+        assertEquals(2, along.size)
+        assertEquals(500.0, along[0], 5.0)
+        assertEquals(1500.0, along[1], 5.0)
+        assertEquals(300.0, com.tripnav.app.nav.CameraMatcher.nextAhead(along, 200.0)!!, 5.0)
+        assertEquals(null, com.tripnav.app.nav.CameraMatcher.nextAhead(along, 0.0, rangeM = 400.0))
+        assertEquals(null, com.tripnav.app.nav.CameraMatcher.nextAhead(along, 1600.0))
+    }
+
+    @Test
+    fun batteryThresholds() {
+        val b = com.tripnav.app.pod.PhoneBattery
+        assertEquals(15, b.crossed(16, com.tripnav.app.pod.PhoneBattery.Status(15, false)))
+        assertEquals(null, b.crossed(15, com.tripnav.app.pod.PhoneBattery.Status(14, false)))
+        assertEquals(10, b.crossed(11, com.tripnav.app.pod.PhoneBattery.Status(9, false)))
+        assertEquals(null, b.crossed(16, com.tripnav.app.pod.PhoneBattery.Status(15, true)))
+        assertEquals(null, b.crossed(null, com.tripnav.app.pod.PhoneBattery.Status(4, false)))
     }
 }

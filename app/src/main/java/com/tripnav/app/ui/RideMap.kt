@@ -84,7 +84,16 @@ fun RideMap(
         lifecycle.addObserver(obs)
         mapView.getMapAsync { m ->
             map = m
+            // The map view is rebuilt whenever the Ride tab comes back; start where the rider left it,
+            // or on their last fix, instead of the default world view.
+            (CameraMemory.last ?: location?.let {
+                CameraPosition.Builder().target(LatLng(it.latitude, it.longitude)).zoom(16.0).build()
+            })?.let { m.moveCamera(CameraUpdateFactory.newCameraPosition(it)) }
             m.uiSettings.isCompassEnabled = true
+            // Keep the compass clear of the status bar, search box and status pills.
+            val dp = mapView.resources.displayMetrics.density
+            m.uiSettings.setCompassMargins(0, (190 * dp).toInt(), (16 * dp).toInt(), 0)
+            m.uiSettings.compassGravity = android.view.Gravity.TOP or android.view.Gravity.END
             m.uiSettings.isAttributionEnabled = true
             m.uiSettings.isLogoEnabled = false
             m.addOnMapLongClickListener { p -> longPress(LatLon(p.latitude, p.longitude)); true }
@@ -95,6 +104,7 @@ fun RideMap(
             })
         }
         onDispose {
+            map?.let { CameraMemory.last = it.cameraPosition }
             lifecycle.removeObserver(obs)
             mapView.onDestroy()
         }
@@ -161,6 +171,8 @@ fun RideMap(
         runCatching {
             if (follow) {
                 m.locationComponent.cameraMode = CameraMode.TRACKING_GPS
+                // Tracking only moves the camera on the next fix; push the current one so it snaps now.
+                location?.let { m.locationComponent.forceLocationUpdate(it) }
                 m.locationComponent.zoomWhileTracking(16.5, 800)
                 m.locationComponent.tiltWhileTracking(45.0, 800)
             } else m.locationComponent.cameraMode = CameraMode.NONE
@@ -176,17 +188,11 @@ fun RideMap(
         m.animateCamera(CameraUpdateFactory.newLatLngBounds(b, 120, 220, 120, 520), 700)
     }
 
-    LaunchedEffect(map) {
-        val m = map ?: return@LaunchedEffect
-        if (location != null && !follow) {
-            m.moveCamera(CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder().target(LatLng(location.latitude, location.longitude)).zoom(14.0).build(),
-            ))
-        }
-    }
-
     AndroidView(factory = { mapView }, modifier = modifier)
 }
+
+/** Last camera position, kept for the life of the process so returning to the Ride tab doesn't reset the map. */
+private object CameraMemory { var last: CameraPosition? = null }
 
 private const val SRC_ROUTE = "route"
 private const val SRC_DONE = "route-done"

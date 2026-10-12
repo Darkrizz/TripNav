@@ -1,5 +1,7 @@
 package com.tripnav.app.ui
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -74,55 +76,66 @@ fun TripsScreen(vm: RideViewModel, onRouteImported: () -> Unit) {
         }
     }
 
-    LazyColumn(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Spacer(Modifier.height(16.dp))
-            Text("Trips & places", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
-                Icon(Icons.Filled.FileUpload, null); Text("  Ride a GPX route")
+    val k = if (settings.imperial) 1 / 1.609 else 1.0
+    val unit = if (settings.imperial) "mph" else "km/h"
+    val totalM = trips.sumOf { it.distanceM }
+
+    Page("Trips", scroll = false) {
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                Panel(padding = 20.dp) {
+                    Row {
+                        Stat("${trips.size}", "Rides", Modifier.weight(1f))
+                        Stat(NavEngine.formatDistance(totalM, settings.imperial), "Total", Modifier.weight(1f), color = TN.Ember)
+                        Stat(formatDuration(trips.sumOf { it.movingSeconds }.toDouble()), "Moving", Modifier.weight(1.2f))
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Button(onClick = { importLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Icon(Icons.Filled.FileUpload, null); Spacer(Modifier.width(8.dp)); Text("Ride a GPX route")
+                }
             }
-        }
-        if (favorites.isNotEmpty()) {
-            item { Text("Favourites", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
-            items(favorites, key = { "f${it.id}" }) { p ->
-                Card(shape = RoundedCornerShape(16.dp), onClick = { vm.choose(p); onRouteImported() }) {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Star, null, tint = Brand)
-                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                            Text(p.name, fontWeight = FontWeight.SemiBold)
-                            if (p.address.isNotBlank()) Text(p.address, style = MaterialTheme.typography.bodySmall)
+            if (favorites.isNotEmpty()) {
+                item { SectionLabel("Favourites") }
+                item {
+                    GroupPanel {
+                        favorites.forEachIndexed { i, p ->
+                            if (i > 0) RowDivider()
+                            ListRow(p.name, p.address.ifBlank { null }, icon = Icons.Filled.Star, iconTint = TN.Ember,
+                                onClick = { vm.choose(p); onRouteImported() }) {
+                                IconButton(onClick = { vm.deletePlace(p) }) { Icon(Icons.Filled.Delete, "Remove", tint = TN.TextLo) }
+                            }
                         }
-                        IconButton(onClick = { vm.deletePlace(p) }) { Icon(Icons.Filled.Delete, "Remove") }
+                    }
+                }
+            }
+            item { SectionLabel("Recorded rides") }
+            if (trips.isEmpty()) item {
+                Panel {
+                    Text("No rides yet", style = MaterialTheme.typography.titleMedium)
+                    Text("Rides are recorded automatically while TripNav is running.", style = MaterialTheme.typography.bodyMedium, color = TN.TextMid)
+                }
+            }
+            items(trips, key = { it.id }) { t ->
+                val avg = if (t.movingSeconds > 0) t.distanceM / t.movingSeconds * 3.6 else 0.0
+                Panel {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(t.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { exporting = t; exportLauncher.launch(t.title.replace(Regex("[^A-Za-z0-9 _-]"), "") + ".gpx") }) {
+                            Icon(Icons.Filled.Share, "Export GPX", tint = TN.TextMid)
+                        }
+                        IconButton(onClick = { scope.launch { c.db.trips().delete(t.id) } }) { Icon(Icons.Filled.Delete, "Delete", tint = TN.TextLo) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row {
+                        Stat(NavEngine.formatDistance(t.distanceM, settings.imperial), "Distance", Modifier.weight(1f), color = TN.Ember)
+                        Stat(formatDuration(t.movingSeconds.toDouble()), "Moving", Modifier.weight(1f))
+                        Stat("${(avg * k).toInt()}", "Avg $unit", Modifier.weight(0.8f))
+                        Stat("${(t.maxSpeedKmh * k).toInt()}", "Max $unit", Modifier.weight(0.8f))
                     }
                 }
             }
         }
-        item { Text("Recorded rides", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
-        if (trips.isEmpty()) item {
-            Text("Rides are recorded automatically while TripNav is running.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        items(trips, key = { it.id }) { t ->
-            Card(shape = RoundedCornerShape(16.dp)) {
-                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(t.title, fontWeight = FontWeight.SemiBold)
-                        val avg = if (t.movingSeconds > 0) t.distanceM / t.movingSeconds * 3.6 else 0.0
-                        val k = if (settings.imperial) 1 / 1.609 else 1.0
-                        val unit = if (settings.imperial) "mph" else "km/h"
-                        Text(
-                            "${NavEngine.formatDistance(t.distanceM, settings.imperial)} · ${formatDuration(t.movingSeconds.toDouble())} moving · " +
-                                "avg ${(avg * k).toInt()} · max ${(t.maxSpeedKmh * k).toInt()} $unit",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    IconButton(onClick = { exporting = t; exportLauncher.launch(t.title.replace(Regex("[^A-Za-z0-9 _-]"), "") + ".gpx") }) {
-                        Icon(Icons.Filled.Share, "Export GPX")
-                    }
-                    IconButton(onClick = { scope.launch { c.db.trips().delete(t.id) } }) { Icon(Icons.Filled.Delete, "Delete") }
-                }
-            }
-        }
-        item { Spacer(Modifier.height(24.dp)) }
     }
 }
