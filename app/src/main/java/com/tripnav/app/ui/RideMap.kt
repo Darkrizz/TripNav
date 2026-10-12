@@ -184,6 +184,24 @@ fun RideMap(
         }
     }
 
+    // On a cold start there is no remembered camera, and zoomWhileTracking is ignored while the location
+    // component is still switching into tracking: put the camera on the rider directly instead of leaving
+    // the world view up.
+    val hasFix = location != null
+    LaunchedEffect(loadedStyle, follow, hasFix) {
+        val m = map ?: return@LaunchedEffect
+        val l = location
+        if (loadedStyle == null || !follow || l == null || m.cameraPosition.zoom >= 10) return@LaunchedEffect
+        runCatching {
+            m.locationComponent.cameraMode = CameraMode.NONE
+            m.moveCamera(CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder().target(LatLng(l.latitude, l.longitude)).zoom(16.5).tilt(45.0).build(),
+            ))
+            m.locationComponent.cameraMode = CameraMode.TRACKING_GPS
+            m.locationComponent.forceLocationUpdate(l)
+        }
+    }
+
     LaunchedEffect(loadedStyle, fitRoute, route) {
         val m = map ?: return@LaunchedEffect
         val pts = route ?: return@LaunchedEffect

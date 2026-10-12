@@ -44,11 +44,10 @@ object TN {
 
     val EmberGradient = Brush.horizontalGradient(listOf(Ember, EmberHot))
 
-    /** Brand brass from the logo; kept for the badge, the loading screen and the wordmark. */
-    val Brass = Color(0xFFD9A84A)
-    val BrassGradient = Brush.linearGradient(listOf(Color(0xFFF9E3A0), Brass, Color(0xFF8F6020)))
-    /** Matches the system splash background (res/values/themes.xml). */
-    val Splash = Color(0xFF060708)
+    /** Warm off-white of the logo's wheel; used for the wordmark. */
+    val Ivory = Color(0xFFF2ECE1)
+    /** Matches the system splash background (res/values/themes.xml) and the logo's backdrop. */
+    val Splash = Color(0xFF0D0E11)
 }
 
 /** Barlow: highway-signage roots, very legible at speed; Condensed for headlines and big numerals. */

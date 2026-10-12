@@ -160,7 +160,7 @@ fun SettingsScreen(vm: RideViewModel, onOpenOfflineMaps: () -> Unit) {
             Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.size(84.dp))
             Text(
                 "TRIPNAV",
-                style = TextStyle(brush = TN.BrassGradient, fontFamily = BarlowCondensed, fontWeight = FontWeight.ExtraBold,
+                style = TextStyle(color = TN.Ivory, fontFamily = BarlowCondensed, fontWeight = FontWeight.Bold,
                     fontSize = 22.sp, letterSpacing = 6.sp),
             )
             Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, color = TN.TextLo)

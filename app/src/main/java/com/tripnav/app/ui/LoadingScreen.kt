@@ -37,8 +37,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Cold-start loading screen. It takes over from the system splash with the badge in the same place: the tyre
- * rolls in around the arrow, the wordmark settles underneath, and the whole screen fades away once the app is
+ * Cold-start loading screen. It takes over from the system splash with the logo in the same place: the wheel
+ * breathes in, the arrow pulses forward, the wordmark settles underneath, and the whole screen fades away once the app is
  * [ready] (and the intro has played).
  */
 @Composable
@@ -67,16 +67,18 @@ fun LoadingScreen(ready: Boolean, onFinished: () -> Unit) {
     Box(
         Modifier.fillMaxSize()
             .graphicsLayer { alpha = 1f - exit.value }
-            .background(TN.Splash)
-            .background(Brush.radialGradient(listOf(TN.Brass.copy(alpha = 0.10f * spin.value), TN.Splash.copy(alpha = 0f)), radius = 900f)),
+            .background(TN.Splash),
         contentAlignment = Alignment.Center,
     ) {
         // Same size and position as the system splash icon, so the hand-over is seamless.
         Box(Modifier.size(240.dp).graphicsLayer { scaleX = 1f + exit.value * 0.06f; scaleY = scaleX }) {
             Image(
                 painterResource(R.drawable.logo_tyre), null,
-                // A whole turn, so the tread lines up with the system splash frame it replaces.
-                Modifier.fillMaxSize().graphicsLayer { rotationZ = -360f * (1f - spin.value) },
+                // Starts exactly as the system splash left it, dips slightly and settles: a quiet "breath" in.
+                Modifier.fillMaxSize().graphicsLayer {
+                    val dip = kotlin.math.sin(Math.PI * spin.value).toFloat()
+                    scaleX = 1f - 0.06f * dip; scaleY = scaleX
+                },
             )
             Image(
                 painterResource(R.drawable.logo_arrow), null,
@@ -98,14 +100,14 @@ fun LoadingScreen(ready: Boolean, onFinished: () -> Unit) {
             Text(
                 "TRIPNAV",
                 style = TextStyle(
-                    brush = TN.BrassGradient, fontFamily = BarlowCondensed, fontWeight = FontWeight.ExtraBold,
-                    fontSize = 40.sp, letterSpacing = (14 - 6 * word.value).sp,
+                    color = TN.Ivory, fontFamily = BarlowCondensed, fontWeight = FontWeight.Bold,
+                    fontSize = 38.sp, letterSpacing = (14 - 6 * word.value).sp,
                 ),
             )
             Spacer(Modifier.height(8.dp))
             Box(
                 Modifier.width(140.dp * line.value).height(1.5.dp)
-                    .background(Brush.horizontalGradient(listOf(TN.Brass.copy(alpha = 0f), TN.Brass, TN.Brass.copy(alpha = 0f)))),
+                    .background(Brush.horizontalGradient(listOf(TN.Ember.copy(alpha = 0f), TN.Ember, TN.Ember.copy(alpha = 0f)))),
             )
             Spacer(Modifier.height(10.dp))
             Text(
