@@ -4,15 +4,15 @@ import com.tripnav.app.offline.OfflineStyle
 import com.tripnav.app.offline.PackManifest
 import com.tripnav.app.offline.Zone
 import com.tripnav.app.util.LatLon
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class OfflineTest {
     private val western = Zone("in-western", "India · Western", bbox = listOf(67.6746, 14.3893, 80.9136, 24.7176), rightHandTraffic = false)

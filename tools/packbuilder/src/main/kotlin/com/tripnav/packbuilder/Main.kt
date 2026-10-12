@@ -1,12 +1,21 @@
 package com.tripnav.packbuilder
 
+import com.ibm.icu.text.Transliterator
 import com.onthegomap.planetiler.FeatureCollector
 import com.onthegomap.planetiler.Planetiler
 import com.onthegomap.planetiler.Profile
 import com.onthegomap.planetiler.config.Arguments
 import com.onthegomap.planetiler.geo.GeoUtils
-import com.ibm.icu.text.Transliterator
 import com.onthegomap.planetiler.reader.SourceFeature
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
+import java.sql.DriverManager
+import java.time.LocalDate
+import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.math.cos
+import kotlin.math.floor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -18,15 +27,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.locationtech.jts.geom.Point
-import java.io.File
-import java.nio.file.Files
-import java.nio.file.Path
-import java.security.MessageDigest
-import java.sql.DriverManager
-import java.time.LocalDate
-import java.util.concurrent.ConcurrentLinkedQueue
-import kotlin.math.cos
-import kotlin.math.floor
 
 /**
  * TripNav offline pack builder.

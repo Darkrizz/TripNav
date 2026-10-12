@@ -6,6 +6,9 @@ import android.net.Uri
 import androidx.core.content.edit
 import androidx.documentfile.provider.DocumentFile
 import com.tripnav.app.util.LatLon
+import java.io.File
+import java.io.IOException
+import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,9 +24,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.File
-import java.io.IOException
-import java.security.MessageDigest
 
 @Serializable
 data class PackFile(val kind: String, val name: String, val size: Long, val sha256: String)
@@ -259,7 +259,8 @@ class PackStore(
         runCatching {
             val dir = DocumentFile.fromTreeUri(context, tree) ?: throw IOException("Can't open folder")
             val manifestDoc = dir.findFile("packs.json") ?: throw IOException("packs.json not found in that folder")
-            val manifest = context.contentResolver.openInputStream(manifestDoc.uri)!!.use {
+            val manifestIn = context.contentResolver.openInputStream(manifestDoc.uri) ?: throw IOException("Can't read packs.json")
+            val manifest = manifestIn.use {
                 json.decodeFromString<PackManifest>(it.readBytes().decodeToString())
             }
             val imported = ArrayList<String>()
@@ -268,13 +269,18 @@ class PackStore(
                 if (docs.values.any { it == null }) return@forEach
                 val staging = File(root, ".staging-${zone.id}").apply { deleteRecursively(); mkdirs() }
                 _jobs.update { it + (zone.id to ZoneJob.Verifying) }
-                docs.forEach { (f, doc) ->
-                    context.contentResolver.openInputStream(doc!!.uri)!!.use { input ->
-                        File(staging, InstalledZone.localName(f.kind)).outputStream().use { input.copyTo(it, 1 shl 20) }
+                try {
+                    docs.forEach { (f, doc) ->
+                        val input = context.contentResolver.openInputStream(doc!!.uri) ?: throw IOException("Can't read ${f.name}")
+                        input.use { File(staging, InstalledZone.localName(f.kind)).outputStream().use { out -> it.copyTo(out, 1 shl 20) } }
                     }
+                    finishInstall(zone, staging).getOrThrow()
+                } catch (e: Exception) {
+                    staging.deleteRecursively()
+                    throw e
+                } finally {
+                    _jobs.update { it - zone.id }
                 }
-                finishInstall(zone, staging).getOrThrow()
-                _jobs.update { it - zone.id }
                 imported += zone.name
             }
             if (imported.isEmpty()) throw IOException("No complete zone found in that folder")

@@ -3,6 +3,7 @@ package com.tripnav.app.pod
 import android.location.Location
 import com.tripnav.app.ble.PodConnection
 import com.tripnav.app.ble.PodLinkState
+import com.tripnav.app.location.LocationSource
 import com.tripnav.app.mirror.MirrorHub
 import com.tripnav.app.mirror.MirrorState
 import com.tripnav.app.nav.ManeuverMapper
@@ -15,7 +16,6 @@ import com.tripnav.app.settings.NightMode
 import com.tripnav.app.settings.PodIdle
 import com.tripnav.app.settings.PodSecondary
 import com.tripnav.app.settings.SettingsRepository
-import com.tripnav.app.location.LocationSource
 import com.tripnav.app.util.Sun
 import com.tripnav.protocol.CompassDirection
 import com.tripnav.protocol.NavFrame
@@ -23,12 +23,12 @@ import com.tripnav.protocol.NavFrameSpec
 import com.tripnav.protocol.PodIcon
 import com.tripnav.protocol.PodProtocol
 import com.tripnav.protocol.SecondaryField
+import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.util.Calendar
 
 /** What the pod is currently being fed; shown in the UI so the rider knows the source. */
 enum class PodSource { NONE, TRIPNAV, GOOGLE_MAPS, COMPASS, CLOCK }
@@ -127,7 +127,7 @@ class PodPresenter(
             PodSecondary.NEXT_DISTANCE -> p.next?.let { SecondaryField.Distance(it.lengthM.toInt()) } ?: SecondaryField.None
         }
         // An upcoming speed camera takes over the bottom line with the pod's own camera countdown.
-        val camera = cameras.nextCameraM(p.alongM)?.let { SecondaryField.SpeedCamera(it.toInt()) }
+        val camera = cameras.nextCameraM(p.alongM)?.takeIf { s.cameraAlerts }?.let { SecondaryField.SpeedCamera(it.toInt()) }
         return NavFrameSpec(icon, p.distanceToManeuverM.toInt(), nextIcon, camera ?: secondary, night, s.imperial)
     }
 

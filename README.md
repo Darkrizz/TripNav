@@ -3,12 +3,14 @@
 TripNav is a motorcycle navigation app for Android that drives the **TripperPod** BLE handlebar display (`RE_DISP`). It is a clean-room successor to *Super TripperPod* v4.1. The pod protocol was recovered by static analysis (`docs/tripper-protocol.md`). No code, assets, keys or backend from the original are used.
 
 ## What it does
-- **Pod link.** Pairs through the system companion-device picker or a scan, with 6-digit PIN pairing. A 1 Hz keepalive holds the pod screen. Night mode, clock sync, firmware and serial readout. Auto-reconnect for 10 minutes after a drop. Shows a call screen during phone or VoIP calls.
+- **Pod link.** Pairs through the system companion-device picker or a scan, with 6-digit PIN pairing. A 1 Hz keepalive holds the pod screen. Night mode, clock sync, firmware and serial readout. Auto-reconnect for 10 minutes after a drop. During a call the pod flashes its call screen and goes back to guiding.
 - **Built-in turn-by-turn.** Valhalla motorcycle routing (fastest, avoid motorways, or curvy roads; avoid tolls or ferries). Multi-stop routes, off-route detection with automatic rerouting, and precise maneuver icons on the pod including roundabout exit numbers.
 - **Pod display options.** Arrival time, time left, distance left or next-turn distance. Compass or clock when idle. Night mode follows real sunset and sunrise at your position.
 - **Google Maps mirroring.** If you navigate in Google Maps instead, its turns are shown on the pod. Parsing is on-device and multilingual, and you can teach TripNav any arrow it doesn't recognise.
 - **Voice guidance.** Ducks music, with optional street names.
 - **Speed limits.** OSM speed limits on screen, with a configurable over-speed warning.
+- **Speed cameras.** Fixed cameras from OpenStreetMap (offline packs, or Overpass online): a spoken warning and the pod's camera countdown.
+- **Pod alerts.** Reroute icon while recalculating; the pod flashes a low-battery warning when the phone drops past 15, 10 and 5 %.
 - **Search.** Photon (typo-tolerant, location-biased), favourites and recents, long-press to drop a pin. Also handles `geo:` links and places shared from Google Maps or any app (coordinates and short links are resolved on-device).
 - **Trips.** Automatic ride recording (distance, moving time, average and max speed), GPX export, and riding a GPX file as a route.
 - **Developer tools.** Raw frame console with live TX/RX log, pod icon tester, route simulator.
@@ -47,14 +49,24 @@ Needs JDK 17–21 and the Android SDK (platform 36).
 ```bash
 ./gradlew :core:protocol:test :app:testDebugUnitTest   # unit tests
 ./gradlew :app:assembleDebug                            # app/build/outputs/apk/debug/app-debug.apk
-./gradlew :app:assembleRelease                          # minified, debug-signed for side-loading
+./gradlew :app:assembleRelease                          # minified; signed with keystore.properties if present, else the debug key
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+### Release signing
+Release builds are signed with the debug key unless a `keystore.properties` file (git-ignored) sits in the project root:
+```properties
+storeFile=tripnav-release.jks
+storePassword=…
+keyAlias=tripnav
+keyPassword=…
+```
+Create the key once with `keytool -genkeypair -v -keystore tripnav-release.jks -alias tripnav -keyalg RSA -keysize 4096 -validity 10000` and keep a backup: updates must be signed with the same key. Switching an installed debug-signed copy to the release key needs one uninstall (trips and downloaded zones are lost).
 
 ## First ride checklist
 1. Open TripNav and grant location, nearby devices and notifications.
 2. Go to **Pod**, tap **Pair**, pick `RE_DISP`, then type the PIN the pod shows.
-3. In **Pod → Test arrow**, the pod should show a right turn, 150 m.
+3. In **Pod → Test display**, the pod should show a right turn, 150 m.
 4. In **Ride**, search for a destination, tap **Ride** and go.
 5. Optional: in **Pod → Grant notification access**, allow Google Maps mirroring.
 

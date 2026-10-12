@@ -1,13 +1,13 @@
 package com.tripnav.app.trips
 
 import com.tripnav.app.util.LatLon
-import org.xmlpull.v1.XmlPullParser
-import org.xmlpull.v1.XmlPullParserFactory
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
 
 data class GpxData(val name: String?, val waypoints: List<Pair<String, LatLon>>, val track: List<LatLon>)
 

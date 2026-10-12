@@ -1,15 +1,5 @@
 package com.tripnav.app.ui
 
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.BluetoothConnected
-import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.IconButton
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.app.Activity
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
@@ -21,31 +11,32 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -59,13 +50,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.tripnav.app.ble.PodLinkState
 import com.tripnav.app.service.RideService
 import com.tripnav.protocol.NavFrame
@@ -163,7 +155,7 @@ fun PodScreen(vm: RideViewModel, onOpenDebug: () -> Unit) {
                 if (status.state == PodLinkState.READY) {
                     FilledTonalButton(onClick = {
                         c.pod.sendRaw(NavFrame.build(NavFrameSpec(PodIcon.TURN_RIGHT, 150, PodIcon.TURN_LEFT, SecondaryField.Distance(800), imperial = settings.imperial)))
-                    }) { Text("Test arrow") }
+                    }) { Text("Test display") }
                     FilledTonalButton(onClick = { c.pod.syncTime() }) { Text("Sync clock") }
                 }
             }
@@ -261,7 +253,7 @@ private fun PinDialog(rejected: Boolean, onSubmit: (String) -> Unit, onResend: (
                     textStyle = MaterialTheme.typography.headlineMedium.copy(textAlign = TextAlign.Center, letterSpacing = 8.sp),
                     isError = rejected,
                 )
-                if (rejected) Text("Wrong PIN, try again.", color = Danger)
+                if (rejected) Text("Wrong PIN, try again.", color = TN.Stop)
             }
         },
         confirmButton = { Button(onClick = { onSubmit(pin) }, enabled = pin.length == 6) { Text("Pair") } },

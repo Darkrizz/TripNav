@@ -106,6 +106,11 @@ fun RideMap(
         onDispose {
             map?.let { CameraMemory.last = it.cameraPosition }
             lifecycle.removeObserver(obs)
+            // Leaving the Ride tab disposes the map while the activity is still resumed; wind the view down in
+            // order so MapLibre releases its renderer and location engine instead of leaking them.
+            val state = lifecycle.currentState
+            if (state.isAtLeast(Lifecycle.State.RESUMED)) mapView.onPause()
+            if (state.isAtLeast(Lifecycle.State.STARTED)) mapView.onStop()
             mapView.onDestroy()
         }
     }

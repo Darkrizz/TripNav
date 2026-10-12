@@ -10,3 +10,6 @@ local.properties
 captures/
 .claude/
 /packs-build/
+keystore.properties
+*.jks
+*.keystore

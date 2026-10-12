@@ -2,6 +2,8 @@ package com.tripnav.app.search
 
 import com.tripnav.app.util.Geo
 import com.tripnav.app.util.LatLon
+import java.net.URLDecoder
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -14,8 +16,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.URLDecoder
-import java.util.Locale
 
 data class Place(val name: String, val address: String, val point: LatLon, val distanceM: Double? = null)
 

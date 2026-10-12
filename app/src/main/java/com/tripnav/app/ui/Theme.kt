@@ -43,12 +43,13 @@ object TN {
     val Glass = Color(0xEB12151B)
 
     val EmberGradient = Brush.horizontalGradient(listOf(Ember, EmberHot))
-}
 
-// Kept for existing call sites.
-val Brand = TN.Ember
-val Danger = TN.Stop
-val Ok = TN.Go
+    /** Brand brass from the logo; kept for the badge, the loading screen and the wordmark. */
+    val Brass = Color(0xFFD9A84A)
+    val BrassGradient = Brush.linearGradient(listOf(Color(0xFFF9E3A0), Brass, Color(0xFF8F6020)))
+    /** Matches the system splash background (res/values/themes.xml). */
+    val Splash = Color(0xFF060708)
+}
 
 /** Barlow: highway-signage roots, very legible at speed; Condensed for headlines and big numerals. */
 val Barlow = FontFamily(

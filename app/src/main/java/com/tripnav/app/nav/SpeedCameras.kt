@@ -46,6 +46,7 @@ class SpeedCameraWatch(
     private val scope: CoroutineScope,
     private val nav: NavEngine,
     private val source: suspend (minLat: Double, minLon: Double, maxLat: Double, maxLon: Double) -> List<LatLon>,
+    private val enabled: () -> Boolean,
     private val announce: (String) -> Unit,
 ) {
     @Volatile private var route: Route? = null
@@ -60,7 +61,7 @@ class SpeedCameraWatch(
                 if (active?.route !== route) load(active?.route)
                 val p = active?.progress ?: return@collect
                 val idx = cams.indexOfFirst { it >= p.alongM - 5 }
-                if (idx >= 0 && cams[idx] - p.alongM <= WARN_M && warned.add(idx)) announce("Speed camera ahead")
+                if (idx >= 0 && cams[idx] - p.alongM <= WARN_M && warned.add(idx) && enabled()) announce("Speed camera ahead")
             }
         }
     }

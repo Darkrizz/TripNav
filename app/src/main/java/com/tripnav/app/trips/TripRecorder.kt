@@ -6,14 +6,14 @@ import com.tripnav.app.data.TripEntity
 import com.tripnav.app.util.Geo
 import com.tripnav.app.util.LatLon
 import com.tripnav.app.util.Polyline
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 data class LiveTrip(
     val startedAt: Long = 0,

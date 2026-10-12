@@ -4,6 +4,8 @@ import com.tripnav.app.settings.AppSettings
 import com.tripnav.app.settings.RoutePreference
 import com.tripnav.app.util.LatLon
 import com.tripnav.app.util.Polyline
+import java.io.IOException
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -22,8 +24,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.io.IOException
-import java.util.Locale
 
 class RoutingException(message: String) : IOException(message)
 

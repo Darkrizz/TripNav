@@ -47,6 +47,8 @@ data class AppSettings(
     val avoidFerries: Boolean = false,
     val speedWarning: Boolean = true,
     val speedWarningTolerance: Int = 5,
+    /** Fixed speed-camera warnings: spoken, and as a countdown on the pod. */
+    val cameraAlerts: Boolean = true,
     val mirrorGoogleMaps: Boolean = true,
     val keepScreenOn: Boolean = true,
     val valhallaUrl: String = BuildConfig.DEFAULT_VALHALLA_URL,
@@ -72,6 +74,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
         val avoidFerries = booleanPreferencesKey("avoid_ferries")
         val speedWarning = booleanPreferencesKey("speed_warning")
         val speedTolerance = intPreferencesKey("speed_tolerance")
+        val cameraAlerts = booleanPreferencesKey("camera_alerts")
         val mirror = booleanPreferencesKey("mirror_gmaps")
         val keepScreenOn = booleanPreferencesKey("keep_screen_on")
         val valhallaUrl = stringPreferencesKey("valhalla_url")
@@ -101,6 +104,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
             avoidFerries = p[K.avoidFerries] ?: d.avoidFerries,
             speedWarning = p[K.speedWarning] ?: d.speedWarning,
             speedWarningTolerance = p[K.speedTolerance] ?: d.speedWarningTolerance,
+            cameraAlerts = p[K.cameraAlerts] ?: d.cameraAlerts,
             mirrorGoogleMaps = p[K.mirror] ?: d.mirrorGoogleMaps,
             keepScreenOn = p[K.keepScreenOn] ?: d.keepScreenOn,
             valhallaUrl = p[K.valhallaUrl]?.takeIf { it.isNotBlank() } ?: d.valhallaUrl,
@@ -136,6 +140,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
     fun setAvoidFerries(v: Boolean) = edit { it[K.avoidFerries] = v }
     fun setSpeedWarning(v: Boolean) = edit { it[K.speedWarning] = v }
     fun setSpeedTolerance(v: Int) = edit { it[K.speedTolerance] = v }
+    fun setCameraAlerts(v: Boolean) = edit { it[K.cameraAlerts] = v }
     fun setMirror(v: Boolean) = edit { it[K.mirror] = v }
     fun setKeepScreenOn(v: Boolean) = edit { it[K.keepScreenOn] = v }
     fun setValhallaUrl(v: String) = edit { it[K.valhallaUrl] = v.trim().trimEnd('/') }

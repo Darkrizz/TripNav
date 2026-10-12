@@ -1,20 +1,22 @@
 package com.tripnav.app
 
-import android.content.ComponentName
-import android.service.notification.NotificationListenerService
-import androidx.core.app.NotificationManagerCompat
-import com.tripnav.app.mirror.MapsMirrorService
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
+import android.service.notification.NotificationListenerService
 import android.telephony.TelephonyManager
+import androidx.core.app.NotificationManagerCompat
 import com.tripnav.app.ble.PodConnection
 import com.tripnav.app.ble.PodScanner
 import com.tripnav.app.data.TripNavDatabase
 import com.tripnav.app.location.LocationSource
+import com.tripnav.app.mirror.MapsMirrorService
 import com.tripnav.app.mirror.MirrorHub
+import com.tripnav.app.nav.Announcer
 import com.tripnav.app.nav.NavEngine
+import com.tripnav.app.nav.SpeedCameraWatch
 import com.tripnav.app.nav.TrafficSide
 import com.tripnav.app.nav.ValhallaClient
 import com.tripnav.app.nav.VoiceGuide
@@ -22,20 +24,23 @@ import com.tripnav.app.offline.DataPolicy
 import com.tripnav.app.offline.OfflineRouter
 import com.tripnav.app.offline.OfflineSearch
 import com.tripnav.app.offline.PackStore
+import com.tripnav.app.pod.PhoneBattery
 import com.tripnav.app.pod.PodPresenter
 import com.tripnav.app.search.Geocoder
+import com.tripnav.app.settings.DataMode
 import com.tripnav.app.settings.SettingsRepository
 import com.tripnav.app.trips.TripRecorder
 import com.tripnav.app.util.Geo
 import com.tripnav.app.util.LatLon
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
-import java.util.Locale
-import java.util.concurrent.TimeUnit
+import org.maplibre.android.MapLibre
 
 class TripNavApp : Application() {
     lateinit var container: AppContainer
@@ -103,12 +108,12 @@ class AppContainer(private val context: Context) {
         packs.delete(id)
     }
     val voice by lazy { VoiceGuide(context, settings) }
-    val cameras = com.tripnav.app.nav.SpeedCameraWatch(mainScope, nav, data::cameras) { voice.announce(it, false) }
-    val battery = com.tripnav.app.pod.PhoneBattery(context)
+    val cameras = SpeedCameraWatch(mainScope, nav, data::cameras, { settings.settings.value.cameraAlerts }) { voice.announce(it, false) }
+    val battery = PhoneBattery(context)
     val presenter = PodPresenter(mainScope, pod, nav, mirror, location, settings, cameras, battery)
 
     fun start() {
-        nav.announcer = com.tripnav.app.nav.Announcer { text, urgent -> voice.announce(text, urgent) }
+        nav.announcer = Announcer { text, urgent -> voice.announce(text, urgent) }
         cameras.start()
         presenter.start()
         // A zone was installed, updated or deleted: drop cached search handles so the new files are used.
@@ -116,8 +121,8 @@ class AppContainer(private val context: Context) {
         // Offline-only mode: tell MapLibre not to attempt any network requests.
         mainScope.launch {
             settings.settings.collect { s ->
-                org.maplibre.android.MapLibre.getInstance(context)
-                org.maplibre.android.MapLibre.setConnected(if (s.dataMode == com.tripnav.app.settings.DataMode.OFFLINE) false else null)
+                MapLibre.getInstance(context)
+                MapLibre.setConnected(if (s.dataMode == DataMode.OFFLINE) false else null)
             }
         }
         // Keep the traffic side right when riding across borders (only re-checked every 50 km).

@@ -47,6 +47,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     val recents = c.db.places().recents().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var searchJob: Job? = null
+    private var planJob: Job? = null
 
     private fun here(): LatLon? = c.location.location.value?.let { LatLon(it.latitude, it.longitude) }
 
@@ -92,14 +93,16 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     private fun plan(stops: List<Destination>) {
         if (stops.isEmpty()) return
         _preview.value = PreviewState(stops = stops, planning = true)
-        viewModelScope.launch {
+        // A newer plan (stop added or removed meanwhile) supersedes this one.
+        planJob?.cancel()
+        planJob = viewModelScope.launch {
             c.nav.plan(stops)
                 .onSuccess { r -> _preview.update { it.copy(route = r, planning = false) } }
                 .onFailure { e -> _preview.update { it.copy(planning = false, error = e.message ?: "Routing failed") } }
         }
     }
 
-    fun cancelPreview() { _preview.value = PreviewState() }
+    fun cancelPreview() { planJob?.cancel(); _preview.value = PreviewState() }
 
     fun startNavigation() {
         val route = _preview.value.route ?: return
@@ -147,13 +150,17 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     fun handleGeo(uri: String) {
         val q = Regex("[?&]q=([^&]+)").find(uri)?.groupValues?.get(1)?.let { java.net.URLDecoder.decode(it, "UTF-8") }
         if (q != null && com.tripnav.app.search.Geocoder.parseCoordinates(q) == null) {
-            viewModelScope.launch { c.data.search(q, here()).firstOrNull()?.let { choose(it) } ?: run { _message.value = "No match for \"$q\"" } }
+            viewModelScope.launch {
+                runCatching { c.data.search(q, here()) }.getOrNull()?.firstOrNull()?.let { choose(it) }
+                    ?: run { _message.value = "No match for \"$q\"" }
+            }
         } else handleShared(uri)
     }
 
     fun routeGpx(data: GpxData) {
         val stops = if (data.track.size >= 2) {
-            Gpx.sampleVias(data.track).drop(1).mapIndexed { i, p -> Destination(if (i == 0) data.name ?: "GPX route" else "", p) }
+            val vias = Gpx.sampleVias(data.track).drop(1)
+            vias.mapIndexed { i, p -> Destination(if (i == vias.lastIndex) data.name ?: "End of GPX route" else "", p) }
         } else data.waypoints.map { Destination(it.first, it.second) }
         if (stops.isEmpty()) { _message.value = "GPX file has no points"; return }
         plan(stops)

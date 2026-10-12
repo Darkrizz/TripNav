@@ -1,14 +1,5 @@
 package com.tripnav.app.ui
 
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.BrightnessAuto
-import com.tripnav.app.settings.NightMode
-import androidx.compose.material3.TextButton
-import androidx.compose.material.icons.filled.AddLocationAlt
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.Place
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,33 +23,35 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddLocationAlt
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.BluetoothConnected
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -75,11 +69,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tripnav.app.ble.PodLinkState
+import com.tripnav.app.nav.Destination
 import com.tripnav.app.nav.ManeuverMapper
 import com.tripnav.app.nav.NavEngine
 import com.tripnav.app.nav.NavProgress
@@ -87,6 +81,7 @@ import com.tripnav.app.nav.NavState
 import com.tripnav.app.pod.PodSource
 import com.tripnav.app.search.Place
 import com.tripnav.app.settings.AppSettings
+import com.tripnav.app.settings.NightMode
 import com.tripnav.app.util.LatLon
 import com.tripnav.app.util.Sun
 import java.text.SimpleDateFormat
@@ -151,8 +146,10 @@ fun RideScreen(vm: RideViewModel, onOpenPod: () -> Unit) {
             when {
                 active != null -> ManeuverBanner(active, progress, settings, c.nav.rightHand())
                 nav is NavState.Routing -> InfoCard("Calculating route…", busy = true)
-                nav is NavState.Arrived -> InfoCard("You have arrived at ${(nav as NavState.Arrived).destination.name}")
-                nav is NavState.Failed -> InfoCard((nav as NavState.Failed).message)
+                nav is NavState.Arrived -> (nav as NavState.Arrived).destination.name.let { name ->
+                    InfoCard(if (name.isBlank()) "You have arrived" else "You have arrived at $name", onClose = vm::stopNavigation)
+                }
+                nav is NavState.Failed -> InfoCard((nav as NavState.Failed).message, error = true, onClose = vm::stopNavigation)
                 preview.stops.isEmpty() || addingStop -> SearchBox(
                     query = query, searching = searching, focus = focus,
                     onQuery = vm::setQuery, onFocus = { searchFocused = it },
@@ -166,6 +163,7 @@ fun RideScreen(vm: RideViewModel, onOpenPod: () -> Unit) {
                     favorites = if (query.isBlank()) favorites.map { Place(it.name, it.address, LatLon(it.lat, it.lon)) } else emptyList(),
                     recents = if (query.isBlank()) recents.map { Place(it.name, it.address, LatLon(it.lat, it.lon)) } else emptyList(),
                     imperial = settings.imperial,
+                    noMatches = query.isNotBlank() && !searching && results.isEmpty(),
                     onPick = { vm.choose(it, asStop = addingStop); addingStop = false; searchFocused = false },
                 )
             }
@@ -198,6 +196,7 @@ fun RideScreen(vm: RideViewModel, onOpenPod: () -> Unit) {
                     onStart = vm::startNavigation, onCancel = vm::cancelPreview,
                     onAddStop = { addingStop = true; focus.requestFocus() },
                     onRemoveStop = vm::removeStop, onRetry = vm::replan,
+                    isFavorite = { s -> favorites.any { it.isAt(s.point) } },
                     onFavorite = { s -> vm.toggleFavorite(Place(s.name, "", s.point)) },
                 )
                 else -> IdleHud(loc?.speed?.times(3.6) ?: 0.0, settings, live.distanceM, live.recording)
@@ -234,8 +233,13 @@ private fun SearchBox(
 
 @Composable
 private fun SearchResults(
-    results: List<Place>, favorites: List<Place>, recents: List<Place>, imperial: Boolean, onPick: (Place) -> Unit,
+    results: List<Place>, favorites: List<Place>, recents: List<Place>, imperial: Boolean, noMatches: Boolean,
+    onPick: (Place) -> Unit,
 ) {
+    if (noMatches) {
+        InfoCard("No places found. Try another name, or long-press the map to drop a pin.")
+        return
+    }
     val rows = buildList {
         favorites.forEach { add(Triple(it, Icons.Filled.Star, true)) }
         recents.filter { r -> favorites.none { it.point == r.point } }.forEach { add(Triple(it, Icons.Filled.History, false)) }
@@ -378,7 +382,7 @@ private fun IdleHud(speedKmh: Double, s: AppSettings, tripM: Double, recording: 
 private fun PreviewCard(
     preview: PreviewState, imperial: Boolean,
     onStart: () -> Unit, onCancel: () -> Unit, onAddStop: () -> Unit, onRemoveStop: (Int) -> Unit,
-    onRetry: () -> Unit, onFavorite: (com.tripnav.app.nav.Destination) -> Unit,
+    onRetry: () -> Unit, isFavorite: (Destination) -> Boolean, onFavorite: (Destination) -> Unit,
 ) {
     Glass(shape = RoundedCornerShape(26.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -392,7 +396,13 @@ private fun PreviewCard(
                     Spacer(Modifier.width(12.dp))
                     Text(s.name.ifBlank { "Via point" }, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (last) IconButton(onClick = { onFavorite(s) }) { Icon(Icons.Filled.StarBorder, "Favourite", tint = TN.TextMid) }
+                    if (last) {
+                        val fav = isFavorite(s)
+                        IconButton(onClick = { onFavorite(s) }) {
+                            Icon(if (fav) Icons.Filled.Star else Icons.Filled.StarBorder, if (fav) "Remove favourite" else "Save as favourite",
+                                tint = if (fav) TN.Ember else TN.TextMid)
+                        }
+                    }
                     if (preview.stops.size > 1) IconButton(onClick = { onRemoveStop(i) }) { Icon(Icons.Filled.Close, "Remove", tint = TN.TextLo) }
                 }
             }
@@ -461,14 +471,20 @@ private fun MapThemeButton(mode: NightMode, onChange: (NightMode) -> Unit) {
 private fun OfflineChip(strict: Boolean) = Pill(if (strict) "Offline only" else "Offline map", TN.Info, Icons.Filled.CloudOff)
 
 @Composable
-fun InfoCard(text: String, busy: Boolean = false) {
+fun InfoCard(text: String, busy: Boolean = false, error: Boolean = false, onClose: (() -> Unit)? = null) {
     Glass(shape = RoundedCornerShape(20.dp)) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 4.dp).heightIn(min = 44.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             if (busy) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = TN.Ember); Spacer(Modifier.width(12.dp)) }
-            Text(text, style = MaterialTheme.typography.bodyLarge)
+            Text(text, style = MaterialTheme.typography.bodyLarge, color = if (error) TN.Stop else TN.TextHi, modifier = Modifier.weight(1f))
+            if (onClose != null) IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "Dismiss", tint = TN.TextMid) }
+            else Spacer(Modifier.width(12.dp))
         }
     }
 }
+
+private fun com.tripnav.app.data.PlaceEntity.isAt(p: LatLon) =
+    kotlin.math.abs(lat - p.lat) < 0.0002 && kotlin.math.abs(lon - p.lon) < 0.0002
 
 fun formatDuration(seconds: Double): String {
     val m = Math.round(seconds / 60).toInt()

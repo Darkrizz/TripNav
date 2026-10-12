@@ -1,31 +1,26 @@
 package com.tripnav.app.ui
 
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Card
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -37,7 +32,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tripnav.app.data.TripEntity
 import com.tripnav.app.nav.NavEngine
@@ -52,7 +46,8 @@ fun TripsScreen(vm: RideViewModel, onRouteImported: () -> Unit) {
     val c = vm.c
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val trips by c.db.trips().all().collectAsState(initial = emptyList())
+    val tripsFlow = remember { c.db.trips().all() }
+    val trips by tripsFlow.collectAsState(initial = emptyList())
     val favorites by vm.favorites.collectAsState()
     val settings by c.settings.settings.collectAsState()
     var exporting by remember { mutableStateOf<TripEntity?>(null) }

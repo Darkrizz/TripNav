@@ -1,5 +1,6 @@
 package com.tripnav.app.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.DarkMode
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Schedule
@@ -39,10 +42,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tripnav.app.BuildConfig
+import com.tripnav.app.R
 import com.tripnav.app.settings.DataMode
 import com.tripnav.app.settings.NightMode
 import com.tripnav.app.settings.PodIdle
@@ -100,12 +110,19 @@ fun SettingsScreen(vm: RideViewModel, onOpenOfflineMaps: () -> Unit) {
             RowDivider()
             Toggle("Speak street names", s.voiceStreetNames, repo::setVoiceStreets, Icons.Filled.Signpost)
             RowDivider()
+            Toggle("Speed-camera alerts", s.cameraAlerts, repo::setCameraAlerts, Icons.Filled.PhotoCamera,
+                "Spoken warning, and a countdown on the pod")
+            RowDivider()
             Toggle("Speed-limit warning", s.speedWarning, repo::setSpeedWarning, Icons.Filled.Speed)
             if (s.speedWarning) {
+                // Dragging updates the label live; the setting is saved once, when the thumb is released.
+                var tolerance by remember(s.speedWarningTolerance) { mutableStateOf(s.speedWarningTolerance.toFloat()) }
                 Column(Modifier.padding(start = 66.dp, end = 16.dp, bottom = 10.dp)) {
-                    Text("Warn at ${s.speedWarningTolerance} km/h over the limit", style = MaterialTheme.typography.bodySmall, color = TN.TextMid)
+                    val over = if (s.imperial) "${Math.round(tolerance / 1.609)} mph" else "${tolerance.toInt()} km/h"
+                    Text("Warn at $over over the limit", style = MaterialTheme.typography.bodySmall, color = TN.TextMid)
                     Slider(
-                        value = s.speedWarningTolerance.toFloat(), onValueChange = { repo.setSpeedTolerance(it.toInt()) },
+                        value = tolerance, onValueChange = { tolerance = it },
+                        onValueChangeFinished = { repo.setSpeedTolerance(tolerance.toInt()) },
                         valueRange = 0f..20f, steps = 19,
                         colors = SliderDefaults.colors(
                             thumbColor = TN.Ember, activeTrackColor = TN.Ember, inactiveTrackColor = TN.Surface3,
@@ -138,15 +155,22 @@ fun SettingsScreen(vm: RideViewModel, onOpenOfflineMaps: () -> Unit) {
             }
         }
 
-        Spacer(Modifier.height(20.dp))
-        Text(
-            "Map data © OpenStreetMap contributors. Maps by OpenFreeMap, routing by Valhalla, search by Photon & Nominatim. Barlow typeface under the SIL OFL.",
-            style = MaterialTheme.typography.bodySmall, color = TN.TextLo, modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        Text(
-            "TRIPNAV ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, color = TN.TextLo,
-            modifier = Modifier.padding(start = 4.dp, top = 8.dp),
-        )
+        Spacer(Modifier.height(28.dp))
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.size(84.dp))
+            Text(
+                "TRIPNAV",
+                style = TextStyle(brush = TN.BrassGradient, fontFamily = BarlowCondensed, fontWeight = FontWeight.ExtraBold,
+                    fontSize = 22.sp, letterSpacing = 6.sp),
+            )
+            Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, color = TN.TextLo)
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Map data © OpenStreetMap contributors. Maps by OpenFreeMap, routing by Valhalla, search by Photon & Nominatim. Barlow typeface under the SIL OFL.",
+                style = MaterialTheme.typography.bodySmall, color = TN.TextLo, textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        }
     }
 }
 

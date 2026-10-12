@@ -6,8 +6,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.service.notification.NotificationListenerService
-import android.util.Log
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import com.tripnav.app.TripNavApp
 import com.tripnav.app.data.LearnedIcon
 import com.tripnav.app.data.LearnedIconDao

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,10 +18,23 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
-        // Public FOSSGIS instance for development; self-host for production (docs/backend.md).
+        // Public FOSSGIS Valhalla server (fair use); riders can point Settings at their own (docs/backend.md).
         buildConfigField("String", "DEFAULT_VALHALLA_URL", "\"https://valhalla1.openstreetmap.de\"")
         // Zone list published by .github/workflows/offline-packs.yml (set tripnav.packsUrl in gradle.properties).
         buildConfigField("String", "DEFAULT_PACKS_URL", "\"${project.findProperty("tripnav.packsUrl") ?: ""}\"")
+    }
+
+    // Release key: put storeFile/storePassword/keyAlias/keyPassword in keystore.properties (git-ignored).
+    // Without it, release builds fall back to the debug key so they can still be side-loaded.
+    val releaseKeys = rootProject.file("keystore.properties").takeIf { it.exists() }
+        ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+    signingConfigs {
+        if (releaseKeys != null) create("release") {
+            storeFile = rootProject.file(releaseKeys.getProperty("storeFile"))
+            storePassword = releaseKeys.getProperty("storePassword")
+            keyAlias = releaseKeys.getProperty("keyAlias")
+            keyPassword = releaseKeys.getProperty("keyPassword")
+        }
     }
 
     buildTypes {
@@ -27,8 +42,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so a release build can be side-loaded for testing.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             // Phones only; debug builds keep x86_64 for the emulator.
             ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         }

@@ -1,6 +1,5 @@
 package com.tripnav.app.ble
 
-import android.os.SystemClock
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
@@ -19,20 +18,21 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.tripnav.app.settings.SettingsRepository
 import com.tripnav.protocol.PodProtocol
 import com.tripnav.protocol.PodResponse
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 enum class PodLinkState { IDLE, CONNECTING, HANDSHAKING, AWAITING_PIN, READY, RECONNECTING }
 
@@ -173,10 +173,6 @@ class PodConnection(private val context: Context, private val settings: Settings
         if (clockMode) { enqueue(PodProtocol.navStopped()); enqueue(timeFrame()) } else enqueue(screen)
     }
 
-    /**
-     * The pod can't overlay a call badge on the arrow, and has no text to show a caller's name. So while guiding,
-     * a call only flashes the call screen briefly and navigation carries on; otherwise the call screen stays up.
-     */
     /** Shows [frame] for [durationMs], then returns to the normal screen. A call screen still takes priority. */
     fun flash(frame: ByteArray, durationMs: Long) = handler.post {
         alertFrame = PodProtocol.withNight(frame, night)
@@ -192,6 +188,10 @@ class PodConnection(private val context: Context, private val settings: Settings
         else -> null
     }
 
+    /**
+     * The pod can't overlay a call badge on the arrow, and has no text to show a caller's name. So while guiding,
+     * a call only flashes the call screen briefly and navigation carries on; otherwise the call screen stays up.
+     */
     private fun showingCall() = callActive && (!guiding || SystemClock.uptimeMillis() < callFlashUntil)
 
     /** One-off frame (debug console, control frames). */

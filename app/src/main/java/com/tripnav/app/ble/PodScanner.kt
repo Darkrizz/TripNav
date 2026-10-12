@@ -16,11 +16,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import com.tripnav.protocol.PodProtocol
+import java.util.regex.Pattern
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import java.util.regex.Pattern
 
 data class FoundPod(val address: String, val name: String, val rssi: Int)
 
