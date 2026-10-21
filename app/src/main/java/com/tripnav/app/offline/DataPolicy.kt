@@ -8,6 +8,8 @@ import com.tripnav.app.nav.RoutingException
 import com.tripnav.app.nav.ValhallaTransport
 import com.tripnav.app.search.Geocoder
 import com.tripnav.app.search.Place
+import com.tripnav.app.search.SharedPlace
+import com.tripnav.app.search.SharedText
 import com.tripnav.app.settings.DataMode
 import com.tripnav.app.settings.SettingsRepository
 import com.tripnav.app.util.LatLon
@@ -128,14 +130,29 @@ class DataPolicy(
         local ?: if (isOnline()) runCatching { geocoder.reverse(p) }.getOrNull() ?: pin(p) else pin(p)
     }
 
-    /** Shared text/links: coordinates work offline; short links need the network to unwrap. */
+    /**
+     * Resolves text or a link shared from another app. Coordinates work offline; a short link needs the network to
+     * unwrap. When the link only names the place (Google Maps app shares do), the name and address are searched,
+     * most specific first, and the hit whose name matches is taken.
+     */
     suspend fun resolveShared(text: String, near: LatLon?): Place? = withContext(Dispatchers.IO) {
-        Geocoder.parseCoordinates(text)?.let { return@withContext reverse(it) }
-        if (isOnline()) geocoder.resolveShared(text, near)
-        else {
-            val query = text.replace(Regex("https?://\\S+"), " ").trim()
-            if (query.isBlank()) null else search(query, near).firstOrNull()
+        val share = SharedText.parse(text)
+        fun named(p: Place, name: String?) = if (name.isNullOrBlank()) p else p.copy(name = name)
+        Geocoder.parseCoordinates(text)?.let { return@withContext named(reverse(it), share.label) }
+        val hops = share.url?.takeIf { isOnline() }?.let { runCatching { geocoder.unwrap(it) }.getOrNull() }.orEmpty()
+        val urlQuery = hops.firstNotNullOfOrNull(SharedPlace::query)
+        hops.firstNotNullOfOrNull(SharedPlace::coordinates)?.let {
+            return@withContext named(reverse(it), share.label ?: urlQuery?.substringBefore(',')?.trim())
         }
+        val full = urlQuery ?: share.lines.joinToString(", ").ifBlank { return@withContext null }
+        val queries = SharedPlace.queries(full)
+        val expected = queries.first().substringBefore(',').trim()
+        queries.forEachIndexed { i, q ->
+            val hits = runCatching { search(q, near) }.getOrDefault(emptyList())
+            // Only the last, address-only search may return a place whose name doesn't match.
+            SharedPlace.best(hits, expected, requireMatch = i < queries.lastIndex)?.let { return@withContext it }
+        }
+        null
     }
 
     /** Traffic side from the zone at [p]; null means "unknown, ask the online geocoder if allowed". */

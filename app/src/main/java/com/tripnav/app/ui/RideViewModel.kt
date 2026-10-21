@@ -8,6 +8,7 @@ import com.tripnav.app.data.PlaceEntity
 import com.tripnav.app.nav.Destination
 import com.tripnav.app.nav.Route
 import com.tripnav.app.search.Place
+import com.tripnav.app.search.SharedText
 import com.tripnav.app.service.RideService
 import com.tripnav.app.trips.Gpx
 import com.tripnav.app.trips.GpxData
@@ -143,8 +144,13 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     fun handleShared(text: String) = viewModelScope.launch {
         _message.value = "Finding shared place…"
         val place = runCatching { c.data.resolveShared(text, here()) }.getOrNull()
-        _message.value = if (place == null) "Couldn't find that place" else null
-        place?.let { choose(it) }
+        if (place != null) { _message.value = null; choose(place); return@launch }
+        // Leave the rider one tap away: search for what was shared and let them pick.
+        val name = SharedText.parse(text).label
+        if (name != null) {
+            setQuery(name)
+            _message.value = "Couldn't pin down \"$name\". Pick it from the results"
+        } else _message.value = "Couldn't open that link. Check your connection and share it again"
     }
 
     fun handleGeo(uri: String) {

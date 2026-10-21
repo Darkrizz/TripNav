@@ -7,7 +7,12 @@ import com.tripnav.app.nav.ManeuverMapper
 import com.tripnav.app.nav.Route
 import com.tripnav.app.nav.RouteFollower
 import com.tripnav.app.nav.TrafficSide
+import com.tripnav.app.nav.Roundabouts
 import com.tripnav.app.search.Geocoder
+import com.tripnav.app.search.Place
+import com.tripnav.app.search.SharedPlace
+import com.tripnav.app.search.SharedText
+import com.tripnav.app.ui.roundaboutSweep
 import com.tripnav.app.trips.Gpx
 import com.tripnav.app.util.Geo
 import com.tripnav.app.util.LatLon
@@ -133,5 +138,74 @@ class LogicTest {
         assertEquals(10, b.crossed(11, com.tripnav.app.pod.PhoneBattery.Status(9, false)))
         assertEquals(null, b.crossed(16, com.tripnav.app.pod.PhoneBattery.Status(15, true)))
         assertEquals(null, b.crossed(null, com.tripnav.app.pod.PhoneBattery.Status(4, false)))
+    }
+
+    @Test fun sharedMapsLinks() {
+        // What maps.app.goo.gl links from the Maps app unwrap to: a name, no coordinates.
+        val app = "https://maps.google.com/?q=Casa+Viva+Tarragona,+Carrer+de+la+Uni%C3%B3,+34,+36,+43001+Tarragona&ftid=0x12a3fcd5457390ed:0x811dd55ed844569f&entry=gps&g_st=ic"
+        assertEquals(null, SharedPlace.coordinates(app))
+        assertEquals("Casa Viva Tarragona, Carrer de la Unió, 34, 36, 43001 Tarragona", SharedPlace.query(app))
+        val pin = "https://maps.google.com/?q=3.0943406,106.1475836&entry=gps"
+        assertEquals(LatLon(3.0943406, 106.1475836), SharedPlace.coordinates(pin))
+        assertEquals(null, SharedPlace.query(pin))
+        assertEquals(LatLon(5.811698, -55.118891), SharedPlace.coordinates("https://www.google.com/maps/search/5.811698,+-55.118891?entry=tts"))
+        val web = "https://www.google.com/maps/place/Eulennest+Vinothek+%26+Weinbar/@48.1979108,16.3658069,17z/data=!3m1!4b1!8m2!3d48.1979108!4d16.3658069"
+        assertEquals(LatLon(48.1979108, 16.3658069), SharedPlace.coordinates(web))
+        assertEquals("Eulennest Vinothek & Weinbar", SharedPlace.query(web))
+        val consent = "https://consent.google.com/ml?continue=" + java.net.URLEncoder.encode(app, "UTF-8")
+        assertEquals("Casa Viva Tarragona, Carrer de la Unió, 34, 36, 43001 Tarragona", SharedPlace.query(consent))
+
+        val share = SharedText.parse("Gateway of India\nApollo Bandar, Colaba, Mumbai, Maharashtra 400001\nhttps://maps.app.goo.gl/AbC123?g_st=aw")
+        assertEquals("https://maps.app.goo.gl/AbC123?g_st=aw", share.url)
+        assertEquals("Gateway of India", share.label)
+        assertEquals(
+            listOf("Gateway of India, Apollo Bandar, Colaba, Mumbai, Maharashtra", "Gateway of India, Mumbai", "Gateway of India, Maharashtra", "Gateway of India",
+                "Apollo Bandar, Colaba, Mumbai, Maharashtra"),
+            SharedPlace.queries(share.lines.joinToString(", ")),
+        )
+        assertEquals(null, SharedText.parse("https://maps.app.goo.gl/AbC123").label)
+    }
+
+    @Test fun sharedPlaceRanking() {
+        val hits = listOf(
+            Place("Colaba Bus Depot", "Mumbai", LatLon(18.91, 72.82)),
+            Place("Gateway of India - गेटवे ऑफ इंडिया", "Mumbai", LatLon(18.922, 72.8347)),
+        )
+        val best = SharedPlace.best(hits, "Gateway of India", requireMatch = true)!!
+        assertEquals(LatLon(18.922, 72.8347), best.point); assertEquals("Gateway of India", best.name)
+        assertEquals(null, SharedPlace.best(hits.take(1), "Gateway of India", requireMatch = true))
+        assertEquals(LatLon(18.91, 72.82), SharedPlace.best(hits.take(1), "Gateway of India", requireMatch = false)!!.point)
+    }
+
+    @Test fun mapsTripLine() {
+        val now = java.util.Calendar.getInstance().apply { set(2026, 9, 21, 10, 0, 0); set(java.util.Calendar.MILLISECOND, 0) }.timeInMillis
+        val a = MirrorParser.trip("12 min · 5.3 km · 10:42 ETA", now)!!
+        assertEquals(12, a.remainingMin); assertEquals(5300, a.remainingM)
+        assertEquals(now + 42 * 60_000L, a.arrivalEpochMs)
+        val b = MirrorParser.trip("1 hr 5 min (63 km)", now)!!
+        assertEquals(65, b.remainingMin); assertEquals(63_000, b.remainingM); assertEquals(now + 65 * 60_000L, b.arrivalEpochMs)
+        val c = MirrorParser.trip("Arrive 6:05\u202Fpm", now)!!
+        assertEquals(now + (8 * 60 + 5) * 60_000L, c.arrivalEpochMs); assertEquals(8 * 60 + 5, c.remainingMin)
+        // Past midnight.
+        assertEquals(now + 14 * 3_600_000L, MirrorParser.trip("00:00", now)!!.arrivalEpochMs)
+        assertEquals(null, MirrorParser.trip("Towards MG Road"))
+        assertEquals(PodIcon.roundabout(2, false), MirrorParser.parse("200 m", "At the roundabout, continue straight", rightHand = false)!!.icon)
+        assertEquals(PodIcon.roundabout(1, false), MirrorParser.parse("200 m", "At the roundabout, turn left onto NH 48", rightHand = false)!!.icon)
+    }
+
+    @Test fun roundaboutExitGeometry() {
+        // Approach heading north, exit heading east: a right turn. ~0.0003 deg ≈ 33 m.
+        val d = 0.0003
+        val pts = listOf(LatLon(0.0, 0.0), LatLon(d, 0.0), LatLon(d * 1.3, d * 0.3), LatLon(d * 1.3, d * 1.3))
+        assertTrue(Roundabouts.exitAngle(pts, 1, 2)!! in 87..93)
+        val left = listOf(LatLon(0.0, 0.0), LatLon(d, 0.0), LatLon(d * 1.3, -d * 0.3), LatLon(d * 1.3, -d * 1.3))
+        assertTrue(Roundabouts.exitAngle(left, 1, 2)!! in -93..-87)
+        assertEquals(null, Roundabouts.exitAngle(pts, 0, 0))
+        // Clockwise (left-hand traffic) rings reach left exits first; counter-clockwise ones right exits first.
+        assertEquals(90f, roundaboutSweep(-90, clockwise = true, exit = 1))
+        assertEquals(270f, roundaboutSweep(90, clockwise = true, exit = 3))
+        assertEquals(90f, roundaboutSweep(90, clockwise = false, exit = 1))
+        assertEquals(180f, roundaboutSweep(0, clockwise = false, exit = 2))
+        assertEquals(315f, roundaboutSweep(179, clockwise = true, exit = 4))
     }
 }

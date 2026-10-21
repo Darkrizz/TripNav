@@ -6,6 +6,7 @@ import com.tripnav.app.ble.PodLinkState
 import com.tripnav.app.location.LocationSource
 import com.tripnav.app.mirror.MirrorHub
 import com.tripnav.app.mirror.MirrorState
+import com.tripnav.app.mirror.TripInfo
 import com.tripnav.app.nav.ManeuverMapper
 import com.tripnav.app.nav.NavEngine
 import com.tripnav.app.nav.NavProgress
@@ -101,7 +102,7 @@ class PodPresenter(
         val m = i.mirror
         if (i.s.mirrorGoogleMaps && m != null && mirror.isFresh()) {
             source = PodSource.GOOGLE_MAPS
-            pod.show(NavFrame.build(NavFrameSpec(m.icon, m.distanceM, night = night, imperial = imperial)))
+            pod.show(NavFrame.build(NavFrameSpec(m.icon, m.distanceM, secondary = mirrorSecondary(m.trip, i.s), night = night, imperial = imperial)))
             return
         }
         when (i.s.podIdle) {
@@ -129,6 +130,27 @@ class PodPresenter(
         // An upcoming speed camera takes over the bottom line with the pod's own camera countdown.
         val camera = cameras.nextCameraM(p.alongM)?.takeIf { s.cameraAlerts }?.let { SecondaryField.SpeedCamera(it.toInt()) }
         return NavFrameSpec(icon, p.distanceToManeuverM.toInt(), nextIcon, camera ?: secondary, night, s.imperial)
+    }
+
+    /**
+     * Bottom line while mirroring Maps: the field the rider picked, from Maps' own trip totals. Maps gives no
+     * distance for the step after next, so that choice shows the arrival time instead; a missing value falls back
+     * to whichever total Maps did give.
+     */
+    private fun mirrorSecondary(t: TripInfo?, s: AppSettings): SecondaryField {
+        if (t == null) return SecondaryField.None
+        val arrival = t.arrivalEpochMs?.let { ms ->
+            Calendar.getInstance().apply { timeInMillis = ms }
+                .let { SecondaryField.ClockTime(it.get(Calendar.HOUR_OF_DAY), it.get(Calendar.MINUTE), amPm = !s.clock24h) }
+        }
+        val left = t.remainingMin?.let { SecondaryField.Duration(it) }
+        val distance = t.remainingM?.let { SecondaryField.Distance(it) }
+        val preferred = when (s.podSecondary) {
+            PodSecondary.ARRIVAL_TIME, PodSecondary.NEXT_DISTANCE -> arrival
+            PodSecondary.TIME_LEFT -> left
+            PodSecondary.DISTANCE_LEFT -> distance
+        }
+        return preferred ?: arrival ?: distance ?: left ?: SecondaryField.None
     }
 
     /** Flashes the pod's low-battery screen when the phone drops past 15 %, 10 % and 5 % while discharging. */

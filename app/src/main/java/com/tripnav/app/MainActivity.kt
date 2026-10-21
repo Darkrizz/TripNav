@@ -56,6 +56,8 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val vm: RideViewModel by viewModels()
+    /** Set when a shared place or link arrives, so the Ride tab comes forward to show it. */
+    private var showRide by mutableStateOf(false)
     private val c get() = (application as TripNavApp).container
 
     private val permissions = buildList {
@@ -101,6 +103,9 @@ class MainActivity : ComponentActivity() {
             val keep = settings.keepScreenOn && (nav is NavState.Active || podState == PodLinkState.READY)
             if (keep) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        LaunchedEffect(showRide) {
+            if (showRide) { tab = 0; debug = false; offlineMaps = false; showRide = false }
         }
         BackHandler(enabled = debug || offlineMaps || tab != 0) {
             when { debug -> debug = false; offlineMaps -> offlineMaps = false; else -> tab = 0 }
@@ -174,9 +179,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_VIEW || intent?.action == Intent.ACTION_SEND) showRide = true
         when (intent?.action) {
             Intent.ACTION_VIEW -> intent.data?.toString()?.let { if (it.startsWith("geo:")) vm.handleGeo(it) else vm.handleShared(it) }
-            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { vm.handleShared(it) }
+            Intent.ACTION_SEND -> {
+                val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
+                // Some apps put the place name in the subject and only the link in the text.
+                val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)?.takeIf { it.isNotBlank() && it !in text }
+                val shared = listOfNotNull(subject, text.ifBlank { null }).joinToString("\n")
+                if (shared.isNotBlank()) vm.handleShared(shared)
+            }
         }
     }
 

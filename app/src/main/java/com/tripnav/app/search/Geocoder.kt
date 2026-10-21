@@ -2,7 +2,6 @@ package com.tripnav.app.search
 
 import com.tripnav.app.util.Geo
 import com.tripnav.app.util.LatLon
-import java.net.URLDecoder
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -67,25 +66,23 @@ class Geocoder(private val http: OkHttpClient) {
         }.getOrNull()
     }
 
-    /** Resolves text shared from another app (Google Maps, browser, messages) to a place. */
-    suspend fun resolveShared(text: String, near: LatLon?): Place? = withContext(Dispatchers.IO) {
-        parseCoordinates(text)?.let { return@withContext reverse(it) }
-        val url = Regex("https?://\\S+").find(text)?.value
-        if (url != null) {
-            val finalUrl = runCatching {
-                http.newCall(Request.Builder().url(url).header("User-Agent", UA).get().build()).execute()
-                    .use { it.request.url.toString() }
-            }.getOrNull()
-            val decoded = finalUrl?.let { URLDecoder.decode(it, "UTF-8") }
-            decoded?.let(::parseCoordinates)?.let { p ->
-                val label = text.substringBefore(url).lines().firstOrNull { it.isNotBlank() }?.trim()
-                return@withContext reverse(p).let { if (!label.isNullOrBlank()) it.copy(name = label) else it }
-            }
-            decoded?.let { Regex("/place/([^/@]+)").find(it)?.groupValues?.get(1)?.replace('+', ' ') }
-                ?.let { q -> search(q, near).firstOrNull()?.let { return@withContext it } }
+    /**
+     * Follows a shared link's redirects one hop at a time and returns every URL on the way, first to last.
+     * Short links (maps.app.goo.gl) only reveal the place in a Location header; the final page is a script shell.
+     */
+    suspend fun unwrap(url: String): List<String> = withContext(Dispatchers.IO) {
+        val hops = mutableListOf(url)
+        val client = http.newBuilder().followRedirects(false).followSslRedirects(false).build()
+        while (hops.size <= MAX_HOPS) {
+            val next = runCatching {
+                client.newCall(Request.Builder().url(hops.last()).header("User-Agent", UA).get().build()).execute().use { r ->
+                    if (r.isRedirect) r.header("Location")?.let { r.request.url.resolve(it)?.toString() } else null
+                }
+            }.getOrNull() ?: break
+            if (next in hops) break
+            hops += next
         }
-        val query = text.replace(Regex("https?://\\S+"), " ").trim()
-        if (query.isBlank()) null else search(query, near).firstOrNull()
+        hops
     }
 
     private fun get(url: String): String? = runCatching {
@@ -96,6 +93,7 @@ class Geocoder(private val http: OkHttpClient) {
 
     companion object {
         const val UA = "TripNav/1.0 (Android; motorcycle navigation)"
+        private const val MAX_HOPS = 6
         private val coord = Regex("(-?\\d{1,2}\\.\\d{3,})\\s*,\\s*(-?\\d{1,3}\\.\\d{3,})")
         private val atCoord = Regex("@(-?\\d{1,2}\\.\\d+),(-?\\d{1,3}\\.\\d+)")
         private val dataCoord = Regex("!3d(-?\\d{1,2}\\.\\d+)!4d(-?\\d{1,3}\\.\\d+)")

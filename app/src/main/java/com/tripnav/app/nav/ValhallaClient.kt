@@ -137,7 +137,7 @@ class ValhallaClient {
             }
             offset = points.size
         }
-        Route(points, maneuvers, trip.summary.length * 1000, trip.summary.time, destinations)
+        Route(points, Roundabouts.annotate(points, maneuvers), trip.summary.length * 1000, trip.summary.time, destinations)
     }
 
     /** Fetches per-edge speed limits along [route]; failures are non-fatal and return an empty list. */

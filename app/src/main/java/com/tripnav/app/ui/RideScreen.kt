@@ -284,8 +284,8 @@ private fun ManeuverBanner(active: NavState.Active, p: NavProgress?, s: AppSetti
             val icon = ManeuverMapper.podIcon(p.upcoming, rht)
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(92.dp).clip(RoundedCornerShape(20.dp)).background(TN.EmberGradient), contentAlignment = Alignment.Center) {
-                    Icon(maneuverVector(icon), null, tint = Color.White, modifier = Modifier.size(70.dp))
-                    roundaboutExit(icon)?.let {
+                    ManeuverGlyph(p.upcoming, icon, Color.White, 70.dp)
+                    if (p.upcoming.exitAngle == null) roundaboutExit(icon)?.let {
                         Text("$it", color = TN.Ember, style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.clip(CircleShape).background(Color.White).padding(horizontal = 7.dp))
                     }
@@ -302,7 +302,7 @@ private fun ManeuverBanner(active: NavState.Active, p: NavProgress?, s: AppSetti
                     verticalAlignment = Alignment.CenterVertically) {
                     Text("THEN", style = MaterialTheme.typography.labelSmall, color = TN.TextLo)
                     Spacer(Modifier.width(10.dp))
-                    Icon(maneuverVector(ManeuverMapper.podIcon(n, rht)), null, tint = TN.EmberHot, modifier = Modifier.size(24.dp))
+                    ManeuverGlyph(n, ManeuverMapper.podIcon(n, rht), TN.EmberHot, 24.dp, showExitNumber = false)
                     Spacer(Modifier.width(8.dp))
                     Text(n.street ?: n.instruction, style = MaterialTheme.typography.bodyLarge, color = TN.TextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }

@@ -23,6 +23,8 @@ data class MirrorState(
     val distanceM: Int,
     val instruction: String,
     val eta: String?,
+    /** Trip totals from the line under Maps' instruction ("12 min · 5.3 km · 10:42"); null when Maps omits them. */
+    val trip: TripInfo?,
     val iconHash: Long?,
     val iconKnown: Boolean,
     val updatedAt: Long,
@@ -83,6 +85,9 @@ class MapsMirrorService : NotificationListenerService() {
         if (text.isEmpty()) text = big
         if (title.isEmpty() && text.isEmpty()) { title = n.tickerText?.toString().orEmpty() }
         val sub = str(Notification.EXTRA_SUB_TEXT).ifEmpty { null }
+        // Older Maps builds put the trip line in the summary or info text instead of the sub text.
+        val tripLine = listOf(sub, str(Notification.EXTRA_SUMMARY_TEXT), str(Notification.EXTRA_INFO_TEXT))
+            .firstOrNull { !it.isNullOrBlank() && MirrorParser.trip(it) != null }
         val raw = "title=\"$title\" text=\"$text\" big=\"$big\" sub=\"${sub.orEmpty()}\" cat=${n.category}"
         Log.d(TAG, raw)
         hub.raw(raw)
@@ -96,7 +101,8 @@ class MapsMirrorService : NotificationListenerService() {
         hub.publish(
             MirrorState(
                 icon = learned ?: parsed.icon, distanceM = distance, instruction = parsed.instruction,
-                eta = sub, iconHash = hash, iconKnown = learned != null, updatedAt = System.currentTimeMillis(),
+                eta = sub, trip = tripLine?.let { MirrorParser.trip(it) } ?: prev?.trip,
+                iconHash = hash, iconKnown = learned != null, updatedAt = System.currentTimeMillis(),
             ),
             bitmap,
         )
@@ -142,6 +148,9 @@ object IconHash {
     private fun luma(c: Int) = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000
 }
 
+/** Trip totals read from Maps; any of them can be missing. [arrivalEpochMs] is the clock time Maps expects to arrive. */
+data class TripInfo(val remainingMin: Int?, val remainingM: Int?, val arrivalEpochMs: Long?)
+
 /** [distanceM] is null when the notification carries no distance. */
 data class ParsedTurn(val icon: Int, val distanceM: Int?, val instruction: String)
 
@@ -158,15 +167,59 @@ object MirrorParser {
         val all = "$title $text".trim()
         if (all.isEmpty()) return null
         val dm = distance.find(all)
-        val meters = dm?.let {
-            val value = it.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return@let null
-            when (it.groupValues[2].lowercase()) {
-                "km" -> value * 1000; "mi" -> value * 1609.344; "ft" -> value / 3.281; "yd" -> value * 0.9144; else -> value
-            }.toInt()
-        }
+        val meters = dm?.let(::toMeters)
         val instruction = listOf(title, text).map { if (dm != null) it.replace(dm.value, "") else it }
             .map { it.trim(' ', '·', '-', ',') }.filter { it.isNotBlank() }.joinToString(" · ").ifBlank { all }
         return ParsedTurn(iconFor(instruction.lowercase(), rightHand), meters, instruction)
+    }
+
+    private val clock = Regex("(\\d{1,2}):(\\d{2})\\s*([ap]\\.?\\s?m\\.?)?", RegexOption.IGNORE_CASE)
+    private val hours = Regex("(\\d+)\\s*(?:h|hr|hrs|hour|hours|std|heure|heures|hora|horas)\\b", RegexOption.IGNORE_CASE)
+    private val minutes = Regex("(\\d+)\\s*(?:min|mins|minute|minutes|minuto|minutos|minuten)\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * Parses Maps' trip line, e.g. "12 min · 5.3 km · 10:42 ETA", "1 hr 5 min · 63 km" or "Arrive 6:05 pm".
+     * Returns null when nothing in it looks like trip data.
+     */
+    fun trip(line: String, now: Long = System.currentTimeMillis()): TripInfo? {
+        val parts = line.replace('\u00A0', ' ').replace('\u202F', ' ').split('·', '•', '|', '(', ')').map { it.trim() }.filter { it.isNotEmpty() }
+        var mins: Int? = null
+        var meters: Int? = null
+        var arrival: Long? = null
+        for (part in parts) {
+            val c = clock.find(part)
+            if (c != null && arrival == null && !hours.containsMatchIn(part)) {
+                var h = c.groupValues[1].toInt()
+                val m = c.groupValues[2].toInt()
+                val ampm = c.groupValues[3].lowercase().firstOrNull()
+                if (ampm == 'p' && h < 12) h += 12
+                if (ampm == 'a' && h == 12) h = 0
+                if (h in 0..23 && m in 0..59) {
+                    val cal = java.util.Calendar.getInstance().apply {
+                        timeInMillis = now; set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, m)
+                        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+                    }
+                    // A clock time earlier than now means tomorrow.
+                    if (cal.timeInMillis < now - 60_000) cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
+                    arrival = cal.timeInMillis
+                }
+                continue
+            }
+            val h = hours.find(part)?.groupValues?.get(1)?.toIntOrNull()
+            val m = minutes.find(part)?.groupValues?.get(1)?.toIntOrNull()
+            if ((h != null || m != null) && mins == null) { mins = (h ?: 0) * 60 + (m ?: 0); continue }
+            if (meters == null) distance.find(part)?.let { meters = toMeters(it) }
+        }
+        if (mins == null && arrival != null) mins = ((arrival - now) / 60_000).toInt().coerceAtLeast(0)
+        if (arrival == null && mins != null) arrival = now + mins * 60_000L
+        return if (mins == null && meters == null) null else TripInfo(mins, meters, arrival)
+    }
+
+    private fun toMeters(m: MatchResult): Int? {
+        val value = m.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return null
+        return when (m.groupValues[2].lowercase()) {
+            "km" -> value * 1000; "mi" -> value * 1609.344; "ft" -> value / 3.281; "yd" -> value * 0.9144; else -> value
+        }.toInt()
     }
 
     fun iconFor(s: String, rightHand: Boolean = true): Int {
@@ -175,7 +228,15 @@ object MirrorParser {
         return when {
             has(s, "roundabout", "rotary", "rotatória", "rotunda", "rotonda", "kreisverkehr", "rond-point") -> {
                 val exit = ordinal.find(s)?.groupValues?.get(1)?.toIntOrNull()
-                    ?: wordOrdinals.entries.firstOrNull { s.contains(it.key) }?.value ?: 1
+                    ?: wordOrdinals.entries.firstOrNull { s.contains(it.key) }?.value
+                    // No exit number ("At the roundabout, turn left"): pick the exit a four-arm roundabout would use.
+                    ?: when {
+                        has(s, "u-turn", "retorno", "wenden", "demi-tour") -> 4
+                        has(s, "straight", "continue", "reto", "recto", "geradeaus", "tout droit") -> 2
+                        left -> if (rightHand) 3 else 1
+                        right -> if (rightHand) 1 else 3
+                        else -> 1
+                    }
                 PodIcon.roundabout(exit, rightHand)
             }
             has(s, "u-turn", "make a u", "retorno", "faça o retorno", "cambio de sentido", "wenden", "demi-tour") ->

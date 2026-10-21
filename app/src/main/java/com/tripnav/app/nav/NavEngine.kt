@@ -12,7 +12,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class NavProgress(
     val upcomingIndex: Int,
@@ -72,7 +74,10 @@ class NavEngine(
 
     /** Calculates a route from the current position without starting guidance (for previews). */
     suspend fun plan(destinations: List<Destination>): Result<Route> = runCatching {
-        val here = location.location.value ?: throw RoutingException("Waiting for GPS fix…")
+        // Opened from a share or link, the app may not have a fix yet: give the GPS a moment before giving up.
+        val here = location.location.value
+            ?: withTimeoutOrNull(FIRST_FIX_WAIT_MS) { location.location.filterNotNull().first() }
+            ?: throw RoutingException("No GPS fix yet. Step outside and try again")
         val s = settings.settings.value
         val heading = here.takeIf { it.hasBearing() && it.speed > 2f }?.bearing
         val origin = LatLon(here.latitude, here.longitude)
@@ -226,6 +231,7 @@ class NavEngine(
     }
 
     companion object {
+        private const val FIRST_FIX_WAIT_MS = 20_000L
         fun spokenDistance(m: Double, imperial: Boolean): String = if (imperial) {
             val feet = m * 3.281
             if (feet < 1000) "${(Math.round(feet / 50) * 50).coerceAtLeast(50)} feet"
